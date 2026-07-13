@@ -1,0 +1,47 @@
+name: 自动解压 ZIP（保留子文件夹，去除顶层父文件夹）
+
+on:
+  push:
+    paths:
+      - '**.zip'
+  workflow_dispatch:
+
+jobs:
+  unzip-job:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 拉取仓库代码
+        uses: actions/checkout@v4
+
+      - name: 解压并整理目录结构
+        run: |
+          for zipfile in *.zip; do
+            if [ -f "$zipfile" ]; then
+              # 获取顶层文件夹名
+              top_dir=$(unzip -l "$zipfile" | head -4 | tail -1 | awk '{print $4}' | cut -d'/' -f1)
+              
+              # 解压
+              unzip -qq "$zipfile" -d .
+              
+              # 如果解出了顶层文件夹，将其内容移到根目录
+              if [ -d "$top_dir" ] && [ "$top_dir" != "." ]; then
+                mv "$top_dir"/* . 2>/dev/null || true
+                # 删除空的顶层文件夹（以及可能存在的隐藏文件）
+                rm -rf "$top_dir" 2>/dev/null || true
+              fi
+            fi
+          done
+
+      - name: 删除原 ZIP
+        run: rm -f *.zip
+
+      - name: 提交并推送
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git diff --staged --quiet || git commit -m "自动解压 zip（保留子文件夹结构）"
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:main
