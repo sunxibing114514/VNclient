@@ -122,6 +122,45 @@ class VnEndpoint extends BaseEndpoint<Vn> {
     );
   }
 
+  /// Returns a random VN matching the supplied filter tree.
+  ///
+  /// Uses the count-based random-page algorithm (same as the web reference):
+  /// 1. Query total count with `count: true`.
+  /// 2. Pick a random page number.
+  /// 3. Fetch that page and pick a random VN from the results.
+  ///
+  /// All filtering (language, R18, freeware, engine, etc.) must be encoded
+  /// in [filters] using VNDB's native filter syntax — including release-level
+  /// nested filters like `['release','=',['engine','=','Ren\'Py']]`.
+  Future<Vn?> randomWithFilters({Object? filters}) async {
+    // 1. Get total count.
+    final countResult = await query(
+      filters: filters ?? [],
+      fields: 'id',
+      sort: 'id',
+      results: 1,
+      count: true,
+    );
+    final totalCount = countResult.count ?? 0;
+    if (totalCount == 0) return null;
+
+    // 2. Pick a random page.
+    const resultsPerPage = 100;
+    final totalPages = (totalCount / resultsPerPage).ceil().clamp(1, 10000);
+    final randomPage = _random.nextInt(totalPages) + 1;
+
+    // 3. Fetch that page and pick a random VN.
+    final result = await query(
+      filters: filters ?? [],
+      fields: listFields,
+      sort: 'id',
+      results: resultsPerPage,
+      page: randomPage,
+    );
+    if (result.results.isEmpty) return null;
+    return result.results[_random.nextInt(result.results.length)];
+  }
+
   /// Returns VNs matching ANY of the given tag ids, sorted by rating.
   /// Used for the "猜你喜欢" recommendation feature.
   Future<QueryResult<Vn>> byTags(

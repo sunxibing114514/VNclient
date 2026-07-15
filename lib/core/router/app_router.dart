@@ -10,6 +10,7 @@ import '../../features/characters/character_list_page.dart';
 import '../../features/home/home_page.dart';
 import '../../features/lists/user_list_page.dart';
 import '../../features/login/login_page.dart';
+import '../../features/random/random_page.dart';
 import '../../features/producers/producer_detail_page.dart';
 import '../../features/producers/producer_list_page.dart';
 import '../../features/quotes/quotes_page.dart';
@@ -187,6 +188,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/about',
         builder: (context, state) => const AboutPage(),
+      ),
+      GoRoute(
+        path: '/random',
+        builder: (context, state) => const RandomPage(),
       ),
       GoRoute(
         path: '/webview',

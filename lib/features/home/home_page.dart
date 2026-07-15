@@ -8,7 +8,6 @@ import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localizations.dart';
 import '../../core/models/vn.dart';
 import '../../core/providers/auth_provider.dart';
-import '../../core/providers/endpoints_provider.dart';
 import '../../core/router/app_router.dart';
 import '../../widgets/async_value_widget.dart';
 import '../../widgets/release_card.dart';
@@ -81,7 +80,7 @@ class HomePage extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.casino),
             tooltip: l10n.tr('randomVn'),
-            onPressed: () => _randomVn(context, ref),
+            onPressed: () => context.push('/random'),
           ),
           IconButton(
             icon: const Icon(Icons.settings),
@@ -118,21 +117,6 @@ class HomePage extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  Future<void> _randomVn(BuildContext context, WidgetRef ref) async {
-    final endpoint = ref.read(vnEndpointProvider);
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      const SnackBar(content: Text('正在抽取随机 VN…'), duration: Duration(seconds: 1)),
-    );
-    try {
-      final vn = await endpoint.random();
-      if (!context.mounted) return;
-      context.push('/vn/${vn.id}');
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('失败: $e')));
-    }
   }
 }
 
