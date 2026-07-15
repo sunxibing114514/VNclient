@@ -18,11 +18,8 @@ jobs:
 
       - name: Fix intl version conflict
         run: |
-          # 将 intl ^0.20.2 替换为 ^0.19.0
           sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
-          # 或者用下面的命令（更通用）
-          # sed -i '' 's/intl:.*/intl: ^0.19.0/g' pubspec.yaml
-          cat pubspec.yaml | grep intl  # 验证修改
+          cat pubspec.yaml | grep intl
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -34,6 +31,19 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate iOS platform files
+        run: |
+          flutter create --platforms=ios --org=com.hjy --bundle-id=com.hjy.vndbclient .
+          sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
+
+      - name: Fix Podfile platform version
+        run: |
+          cd ios
+          # 设置最低 iOS 版本为 12.0
+          sed -i '' 's/# platform :ios, .*/platform :ios, '\''12.0'\''/' Podfile
+          cat Podfile | grep "platform :ios"
+          cd ..
+
       - name: Install CocoaPods dependencies
         run: |
           cd ios
@@ -43,6 +53,7 @@ jobs:
       - name: Build iOS (unsigned)
         run: |
           flutter build ios --release --no-codesign
+          
           mkdir -p build/ios/ipa/Payload
           cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
           cd build/ios/ipa
