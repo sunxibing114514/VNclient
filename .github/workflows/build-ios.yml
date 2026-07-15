@@ -50,12 +50,17 @@ jobs:
 
       - name: Disable code signing
         run: |
-          find ios -name "project.pbxproj" -exec sed -i '' 's/CODE_SIGNING_ALLOWED = .*/CODE_SIGNING_ALLOWED = NO/g' {} \;
-          find ios -name "project.pbxproj" -exec sed -i '' 's/CODE_SIGNING_REQUIRED = .*/CODE_SIGNING_REQUIRED = NO/g' {} \;
-          find ios -name "project.pbxproj" -exec sed -i '' 's/"CODE_SIGN_IDENTITY" = .*/"CODE_SIGN_IDENTITY" = ""/g' {} \;
-          find ios -name "project.pbxproj" -exec sed -i '' 's/CODE_SIGN_IDENTITY = .*/CODE_SIGN_IDENTITY = ""/g' {} \;
-          echo "=== 签名配置已禁用 ==="
-          grep -E "CODE_SIGNING_(ALLOWED|REQUIRED)|CODE_SIGN_IDENTITY" ios/Runner.xcodeproj/project.pbxproj | head -10
+          # 修改 Runner 项目签名配置
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_IDENTITY = "Apple Development"/CODE_SIGN_IDENTITY = ""/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer"/CODE_SIGN_IDENTITY = ""/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/DEVELOPMENT_TEAM = .*;/DEVELOPMENT_TEAM = "";/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/"CODE_SIGN_IDENTITY[s]* = .*/"CODE_SIGN_IDENTITY" = "";/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGNING_ALLOWED = YES;/CODE_SIGNING_ALLOWED = NO;/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGNING_REQUIRED = YES;/CODE_SIGNING_REQUIRED = NO;/g' ios/Runner.xcodeproj/project.pbxproj
+          
+          echo "=== Runner 签名配置已禁用 ==="
+          grep -E "CODE_SIGN_STYLE|CODE_SIGN_IDENTITY|DEVELOPMENT_TEAM|CODE_SIGNING_ALLOWED|CODE_SIGNING_REQUIRED" ios/Runner.xcodeproj/project.pbxproj | head -10
 
       - name: Fix Podfile platform version
         run: |
@@ -77,7 +82,6 @@ jobs:
             echo "end" >> Podfile
           else
             sed -i '' 's/# platform :ios, .*/platform :ios, '\''12.0'\''/' Podfile
-            # 在 Podfile 中添加禁用签名的配置
             if ! grep -q "CODE_SIGNING_ALLOWED.*NO" Podfile; then
               sed -i '' '/post_install do |installer|/a\
               \  installer.pods_project.targets.each do |target|\
@@ -88,6 +92,7 @@ jobs:
               ' Podfile
             fi
           fi
+          echo "=== Podfile 配置 ==="
           cat Podfile | grep -E "platform :ios|CODE_SIGNING_ALLOWED"
           cd ..
 
