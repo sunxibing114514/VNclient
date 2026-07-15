@@ -49,8 +49,13 @@ jobs:
         run: |
           sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = com.hjy.vnclient;/g' ios/Runner.xcodeproj/project.pbxproj
 
-      - name: Disable code signing
+      - name: Set iOS deployment target & disable code signing
         run: |
+          # Flutter 3.44 要求最低 iOS 13（官方 supported-platforms：iOS 13-26，12 及更早不支持）。
+          # 把 Podfile/pbxproj 的部署目标统一到 13.0，避免 "required a higher minimum
+          # deployment target" 错误。flutter create 默认已是 13.0，这里显式写一遍保险。
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 13.0/g' ios/Runner.xcodeproj/project.pbxproj
+
           # 保留 CODE_SIGN_STYLE = Manual：Manual + 空 team + CODE_SIGNING_ALLOWED=NO
           # 时 Xcode 不会尝试自动签名解析，xcodebuild 能正常跑完。
           sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
@@ -59,14 +64,14 @@ jobs:
           sed -i '' 's/DEVELOPMENT_TEAM = .*;/DEVELOPMENT_TEAM = "";/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGNING_ALLOWED = YES;/CODE_SIGNING_ALLOWED = NO;/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGNING_REQUIRED = YES;/CODE_SIGNING_REQUIRED = NO;/g' ios/Runner.xcodeproj/project.pbxproj
-          echo "=== pbxproj 签名相关字段 ==="
-          grep -E "CODE_SIGN_STYLE|CODE_SIGN_IDENTITY|DEVELOPMENT_TEAM|CODE_SIGNING_(ALLOWED|REQUIRED)" ios/Runner.xcodeproj/project.pbxproj || true
+          echo "=== pbxproj 签名/部署目标字段 ==="
+          grep -E "CODE_SIGN_STYLE|CODE_SIGN_IDENTITY|DEVELOPMENT_TEAM|CODE_SIGNING_(ALLOWED|REQUIRED)|IPHONEOS_DEPLOYMENT_TARGET" ios/Runner.xcodeproj/project.pbxproj || true
 
       - name: Fix Podfile
         run: |
           cd ios
           if [ ! -f Podfile ]; then
-            echo "platform :ios, '12.0'" > Podfile
+            echo "platform :ios, '13.0'" > Podfile
             echo "target 'Runner' do" >> Podfile
             echo "  use_frameworks!" >> Podfile
             echo "  use_modular_headers!" >> Podfile
@@ -78,13 +83,14 @@ jobs:
             echo "    target.build_configurations.each do |config|" >> Podfile
             echo "      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'" >> Podfile
             echo "      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'" >> Podfile
-            # 消除 'IPHONEOS_DEPLOYMENT_TARGET set to 9.0' 警告
-            echo "      config.build_settings.delete('IPHONEOS_DEPLOYMENT_TARGET')" >> Podfile
+            # 统一 pod 部署目标到 13.0（Flutter 3.44 要求），消除 9.0/12.0 警告
+            echo "      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'" >> Podfile
             echo "    end" >> Podfile
             echo "  end" >> Podfile
             echo "end" >> Podfile
           else
-            sed -i '' 's/# platform :ios, .*/platform :ios, '\''12.0'\''/' Podfile
+            sed -i '' 's/# platform :ios, .*/platform :ios, '\''13.0'\''/' Podfile
+            sed -i '' "s/platform :ios, '[0-9.]*'/platform :ios, '13.0'/" Podfile
             if ! grep -q "CODE_SIGNING_ALLOWED.*NO" Podfile; then
               sed -i '' '/post_install do |installer|/a\
               \  installer.pods_project.targets.each do |target|\
