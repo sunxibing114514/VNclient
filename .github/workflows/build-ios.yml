@@ -16,10 +16,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Fix intl version conflict
+      - name: Fix pubspec.yaml (name & intl)
         run: |
+          # 修改包名为小写（符合 Dart 规范）
+          sed -i '' 's/^name: .*/name: vndb_app/' pubspec.yaml
+          # 修复 intl 版本冲突
           sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
-          cat pubspec.yaml | grep intl
+          # 验证修改
+          grep "^name:" pubspec.yaml
+          grep "intl:" pubspec.yaml
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -34,21 +39,20 @@ jobs:
       - name: Generate iOS platform files
         run: |
           flutter create --platforms=ios --org=com.hjy .
+          # flutter create 会重置 pubspec.yaml，需要再次修复
+          sed -i '' 's/^name: .*/name: vndb_app/' pubspec.yaml
           sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
 
       - name: Set Bundle ID
         run: |
           cd ios
-          # 修改 Runner.xcodeproj/project.pbxproj 中的 Bundle ID
           sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = com.hjy.vndbclient;/g' Runner.xcodeproj/project.pbxproj
-          # 验证修改
           grep "PRODUCT_BUNDLE_IDENTIFIER" Runner.xcodeproj/project.pbxproj | head -5
           cd ..
 
       - name: Fix Podfile platform version
         run: |
           cd ios
-          # 如果 Podfile 不存在则创建
           if [ ! -f Podfile ]; then
             echo "platform :ios, '12.0'" > Podfile
             echo "target 'Runner' do" >> Podfile
