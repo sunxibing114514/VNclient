@@ -18,13 +18,11 @@ jobs:
 
       - name: Fix pubspec.yaml (name & intl)
         run: |
-          # 修改包名为小写（符合 Dart 规范）
-          sed -i '' 's/^name: .*/name: vndb_app/' pubspec.yaml
-          # 修复 intl 版本冲突
+          # 先修改包名为小写
+          sed -i '' 's/^name: VNclient/name: vndb_app/' pubspec.yaml
           sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
           # 验证修改
-          grep "^name:" pubspec.yaml
-          grep "intl:" pubspec.yaml
+          cat pubspec.yaml | grep -E "^(name|intl):"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -39,7 +37,7 @@ jobs:
       - name: Generate iOS platform files
         run: |
           flutter create --platforms=ios --org=com.hjy .
-          # flutter create 会重置 pubspec.yaml，需要再次修复
+          # 再次修复（flutter create 会重置 pubspec.yaml）
           sed -i '' 's/^name: .*/name: vndb_app/' pubspec.yaml
           sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
 
