@@ -1,0 +1,56 @@
+name: Build iOS (Unsigned IPA)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build_ios:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.24.0'  # 根据 pubspec.lock 中的 SDK 版本
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Install CocoaPods dependencies
+        run: |
+          cd ios
+          pod install --repo-update
+          cd ..
+
+      - name: Build iOS (unsigned)
+        run: |
+          flutter build ios --release --no-codesign
+          
+          # 创建 Payload 目录并打包 .ipa
+          mkdir -p build/ios/ipa/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+          cd build/ios/ipa
+          zip -r ../VNclient-unsigned.ipa Payload/
+          cd -
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VNclient-unsigned-ipa
+          path: build/ios/VNclient-unsigned.ipa
+
+      - name: Upload .app artifact (for simulator)
+        uses: actions/upload-artifact@v4
+        with:
+          name: VNclient-app
+          path: build/ios/iphoneos/Runner.app
