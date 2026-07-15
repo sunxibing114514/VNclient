@@ -18,9 +18,7 @@ jobs:
 
       - name: Fix pubspec.yaml (name & intl)
         run: |
-          # 修改包名为小写（符合 Dart 规范）
           sed -i '' 's/^name: VNclient/name: vnclient/' pubspec.yaml
-          # 修复 intl 版本冲突
           sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
           echo "=== 修改后的 pubspec.yaml 关键字段 ==="
           grep -E "^(name|intl):" pubspec.yaml
@@ -37,9 +35,7 @@ jobs:
 
       - name: Generate iOS platform files
         run: |
-          # 指定 --project-name 覆盖文件夹名的检查
           flutter create --platforms=ios --org=com.hjy --project-name=vnclient .
-          # flutter create 可能重置 pubspec.yaml，再次修复
           sed -i '' 's/^name: .*/name: vnclient/' pubspec.yaml
           sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
           echo "=== 生成 iOS 平台后的 pubspec.yaml ==="
@@ -51,6 +47,15 @@ jobs:
           sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = com.hjy.vnclient;/g' Runner.xcodeproj/project.pbxproj
           grep "PRODUCT_BUNDLE_IDENTIFIER" Runner.xcodeproj/project.pbxproj | head -5
           cd ..
+
+      - name: Disable code signing
+        run: |
+          find ios -name "project.pbxproj" -exec sed -i '' 's/CODE_SIGNING_ALLOWED = .*/CODE_SIGNING_ALLOWED = NO/g' {} \;
+          find ios -name "project.pbxproj" -exec sed -i '' 's/CODE_SIGNING_REQUIRED = .*/CODE_SIGNING_REQUIRED = NO/g' {} \;
+          find ios -name "project.pbxproj" -exec sed -i '' 's/"CODE_SIGN_IDENTITY" = .*/"CODE_SIGN_IDENTITY" = ""/g' {} \;
+          find ios -name "project.pbxproj" -exec sed -i '' 's/CODE_SIGN_IDENTITY = .*/CODE_SIGN_IDENTITY = ""/g' {} \;
+          echo "=== 签名配置已禁用 ==="
+          grep -E "CODE_SIGNING_(ALLOWED|REQUIRED)|CODE_SIGN_IDENTITY" ios/Runner.xcodeproj/project.pbxproj | head -10
 
       - name: Fix Podfile platform version
         run: |
@@ -65,12 +70,25 @@ jobs:
             echo "post_install do |installer|" >> Podfile
             echo "  installer.pods_project.targets.each do |target|" >> Podfile
             echo "    flutter_additional_ios_build_settings(target)" >> Podfile
+            echo "    target.build_configurations.each do |config|" >> Podfile
+            echo "      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'" >> Podfile
+            echo "    end" >> Podfile
             echo "  end" >> Podfile
             echo "end" >> Podfile
           else
             sed -i '' 's/# platform :ios, .*/platform :ios, '\''12.0'\''/' Podfile
+            # 在 Podfile 中添加禁用签名的配置
+            if ! grep -q "CODE_SIGNING_ALLOWED.*NO" Podfile; then
+              sed -i '' '/post_install do |installer|/a\
+              \  installer.pods_project.targets.each do |target|\
+              \    target.build_configurations.each do |config|\
+              \      config.build_settings['\''CODE_SIGNING_ALLOWED'\''] = '\''NO'\''\
+              \    end\
+              \  end
+              ' Podfile
+            fi
           fi
-          cat Podfile | grep "platform :ios"
+          cat Podfile | grep -E "platform :ios|CODE_SIGNING_ALLOWED"
           cd ..
 
       - name: Install CocoaPods dependencies
