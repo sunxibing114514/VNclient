@@ -18,11 +18,13 @@ jobs:
 
       - name: Fix pubspec.yaml (name & intl)
         run: |
-          # 先修改包名为小写
-          sed -i '' 's/^name: VNclient/name: vndb_app/' pubspec.yaml
+          # 第一步：先修改包名（必须小写）
+          sed -i '' 's/^name: VNclient/name: vnclient/' pubspec.yaml
+          # 第二步：修复 intl 版本冲突
           sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
-          # 验证修改
-          cat pubspec.yaml | grep -E "^(name|intl):"
+          # 第三步：验证修改是否成功
+          echo "=== 修改后的 pubspec.yaml 关键字段 ==="
+          grep -E "^(name|intl):" pubspec.yaml
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -36,15 +38,18 @@ jobs:
 
       - name: Generate iOS platform files
         run: |
+          # 此时 pubspec.yaml 已经是正确的包名，执行 create 命令
           flutter create --platforms=ios --org=com.hjy .
-          # 再次修复（flutter create 会重置 pubspec.yaml）
-          sed -i '' 's/^name: .*/name: vndb_app/' pubspec.yaml
+          # 但 create 命令可能会重置文件，所以再次修复
+          sed -i '' 's/^name: .*/name: vnclient/' pubspec.yaml
           sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
+          echo "=== 生成 iOS 平台后的 pubspec.yaml ==="
+          grep -E "^(name|intl):" pubspec.yaml
 
       - name: Set Bundle ID
         run: |
           cd ios
-          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = com.hjy.vndbclient;/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = com.hjy.vnclient;/g' Runner.xcodeproj/project.pbxproj
           grep "PRODUCT_BUNDLE_IDENTIFIER" Runner.xcodeproj/project.pbxproj | head -5
           cd ..
 
