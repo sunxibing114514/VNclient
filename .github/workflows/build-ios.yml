@@ -16,14 +16,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 关键：重命名目录为符合 Dart 包名规范的名称
+      - name: Rename project directory to valid Dart package name
+        run: |
+          cd ..
+          mv VNclient-main vnclient
+          cd vnclient
+          pwd
+
       - name: Fix pubspec.yaml (name & intl)
         run: |
-          # 第一步：先修改包名（必须小写）
           sed -i '' 's/^name: VNclient/name: vnclient/' pubspec.yaml
-          # 第二步：修复 intl 版本冲突
           sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
-          # 第三步：验证修改是否成功
-          echo "=== 修改后的 pubspec.yaml 关键字段 ==="
+          echo "=== 修改后的 pubspec.yaml ==="
           grep -E "^(name|intl):" pubspec.yaml
 
       - name: Setup Flutter
@@ -38,10 +43,7 @@ jobs:
 
       - name: Generate iOS platform files
         run: |
-          # 此时 pubspec.yaml 已经是正确的包名，执行 create 命令
-          flutter create --platforms=ios --org=com.hjy .
-          # 但 create 命令可能会重置文件，所以再次修复
-          sed -i '' 's/^name: .*/name: vnclient/' pubspec.yaml
+          flutter create --platforms=ios --org=com.hjy --project-name=vnclient .
           sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
           echo "=== 生成 iOS 平台后的 pubspec.yaml ==="
           grep -E "^(name|intl):" pubspec.yaml
