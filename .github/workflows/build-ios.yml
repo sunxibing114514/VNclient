@@ -33,14 +33,37 @@ jobs:
 
       - name: Generate iOS platform files
         run: |
-          flutter create --platforms=ios --org=com.hjy --bundle-id=com.hjy.vndbclient .
+          flutter create --platforms=ios --org=com.hjy .
           sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
+
+      - name: Set Bundle ID
+        run: |
+          cd ios
+          # 修改 Runner.xcodeproj/project.pbxproj 中的 Bundle ID
+          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = com.hjy.vndbclient;/g' Runner.xcodeproj/project.pbxproj
+          # 验证修改
+          grep "PRODUCT_BUNDLE_IDENTIFIER" Runner.xcodeproj/project.pbxproj | head -5
+          cd ..
 
       - name: Fix Podfile platform version
         run: |
           cd ios
-          # 设置最低 iOS 版本为 12.0
-          sed -i '' 's/# platform :ios, .*/platform :ios, '\''12.0'\''/' Podfile
+          # 如果 Podfile 不存在则创建
+          if [ ! -f Podfile ]; then
+            echo "platform :ios, '12.0'" > Podfile
+            echo "target 'Runner' do" >> Podfile
+            echo "  use_frameworks!" >> Podfile
+            echo "  use_modular_headers!" >> Podfile
+            echo "  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))" >> Podfile
+            echo "end" >> Podfile
+            echo "post_install do |installer|" >> Podfile
+            echo "  installer.pods_project.targets.each do |target|" >> Podfile
+            echo "    flutter_additional_ios_build_settings(target)" >> Podfile
+            echo "  end" >> Podfile
+            echo "end" >> Podfile
+          else
+            sed -i '' 's/# platform :ios, .*/platform :ios, '\''12.0'\''/' Podfile
+          fi
           cat Podfile | grep "platform :ios"
           cd ..
 
