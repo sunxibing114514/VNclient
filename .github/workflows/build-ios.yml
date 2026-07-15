@@ -16,11 +16,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Fix intl version conflict
+        run: |
+          # 将 intl ^0.20.2 替换为 ^0.19.0
+          sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
+          # 或者用下面的命令（更通用）
+          # sed -i '' 's/intl:.*/intl: ^0.19.0/g' pubspec.yaml
+          cat pubspec.yaml | grep intl  # 验证修改
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: '3.24.0'  # 根据 pubspec.lock 中的 SDK 版本
+          flutter-version: '3.24.0'
           cache: true
 
       - name: Install dependencies
@@ -35,8 +43,6 @@ jobs:
       - name: Build iOS (unsigned)
         run: |
           flutter build ios --release --no-codesign
-          
-          # 创建 Payload 目录并打包 .ipa
           mkdir -p build/ios/ipa/Payload
           cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
           cd build/ios/ipa
@@ -49,7 +55,7 @@ jobs:
           name: VNclient-unsigned-ipa
           path: build/ios/VNclient-unsigned.ipa
 
-      - name: Upload .app artifact (for simulator)
+      - name: Upload .app artifact
         uses: actions/upload-artifact@v4
         with:
           name: VNclient-app
