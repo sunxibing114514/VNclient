@@ -16,7 +16,8 @@ jobs:
 
       - name: Fix pubspec.yaml (name & intl)
         run: |
-          # 仓库里 name 实际是 vndb_app，统一改成 vnclient 以匹配 --project-name
+          # 仓库里 name 实际是 vndb_app，原 sed 's/^name: VNclient/' 匹配不到，
+          # 改成 .* 才能统一成 vnclient 以匹配 --project-name=vnclient
           sed -i '' 's/^name: .*/name: vnclient/' pubspec.yaml
           # Flutter 3.24.0 的 flutter_localizations 依赖 intl 0.19.x
           sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
@@ -45,14 +46,17 @@ jobs:
 
       - name: Disable code signing
         run: |
-          # 关键：不要把 CODE_SIGN_STYLE 改成 Manual！
-          # Manual 在没有 provisioning profile 时会让 xcodebuild 失败，Flutter 随后
-          # 会误报 "Building a deployable iOS app requires a selected Development Team"，
-          # 即使已经传了 --no-codesign（--no-codesign 只负责向 xcodebuild 传入
-          # CODE_SIGNING_ALLOWED=NO，无法消除 Manual 风格的预校验失败）。
-          # 这里只做安全清理：删除 DEVELOPMENT_TEAM、清空 CODE_SIGN_IDENTITY。
-          sed -i '' '/DEVELOPMENT_TEAM/d' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/CODE_SIGN_IDENTITY = .*/CODE_SIGN_IDENTITY = "";/g' ios/Runner.xcodeproj/project.pbxproj
+          # 必须保留 CODE_SIGN_STYLE = Manual：
+          # - Manual + 空 team + CODE_SIGNING_ALLOWED=NO 时，Xcode 不会尝试自动签名解析，
+          #   xcodebuild 能正常跑完并生成 Runner.app（原工作流就是这样成功的）。
+          # - 若改成 Automatic（默认），Xcode 会在构建阶段尝试自动签名解析，
+          #   在 CI（无 Apple ID / 无 provisioning profile）下会让 Run Script 阶段失败。
+          # 副作用：Flutter 构建后校验时看到空 team，会误报 "Development Team required"，
+          # 但 Runner.app 实际已生成 —— 在 Build 步骤里用 set +e 忽略该误报即可。
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_IDENTITY = "Apple Development"/CODE_SIGN_IDENTITY = ""/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer"/CODE_SIGN_IDENTITY = ""/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/DEVELOPMENT_TEAM = .*;/DEVELOPMENT_TEAM = "";/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGNING_ALLOWED = YES;/CODE_SIGNING_ALLOWED = NO;/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGNING_REQUIRED = YES;/CODE_SIGNING_REQUIRED = NO;/g' ios/Runner.xcodeproj/project.pbxproj
           echo "=== pbxproj 签名相关字段 ==="
@@ -99,30 +103,23 @@ jobs:
 
       - name: Build iOS
         run: |
-          # flutter build 在 --no-codesign 下仍可能因 pbxproj 签名配置不一致，
-          # 在构建后的校验阶段误报 "Development Team required"。但只要 xcodebuild
-          # 实际成功，Runner.app 就已经生成，可以直接打包。
+          # CODE_SIGN_STYLE=Manual + 空 team 会让 xcodebuild 成功生成 Runner.app，
+          # 但 Flutter 随后的校验会误报 "Development Team required" 并返回非零退出码。
+          # 用 set +e 忽略该误报，靠 Runner.app 是否存在判断真实构建结果。
           set +e
           flutter build ios --release --no-codesign
+          BUILD_EXIT=$?
           set -e
+          echo "flutter build exit code: $BUILD_EXIT"
 
-          # 如果 Runner.app 不存在（说明 xcodebuild 真的失败了），直接跑 xcodebuild
-          # 查看真实错误，并尝试生成 .app。
           if [ ! -d build/ios/iphoneos/Runner.app ]; then
-            echo "=== Runner.app 不存在，直接运行 xcodebuild 查看真实错误 ==="
-            cd ios
-            xcodebuild \
-              -workspace Runner.xcworkspace \
-              -scheme Runner \
-              -configuration Release \
-              -sdk iphoneos \
-              -destination 'generic/platform=ios' \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGN_IDENTITY="" \
-              build
-            cd ..
+            echo "=== Runner.app 不存在，构建真实失败 ==="
+            echo "重新运行带详细日志的构建以定位错误："
+            flutter build ios --release --no-codesign -v 2>&1 | tail -n 300
+            exit 1
           fi
+
+          echo "=== Runner.app 已生成，继续打包 ==="
 
           # 创建 Payload 目录结构并拷贝 .app（不用软链接，避免 zip 行为不一致）
           rm -rf Payload
