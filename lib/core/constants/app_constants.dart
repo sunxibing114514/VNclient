@@ -9,7 +9,7 @@ class AppConstants {
   static const String siteBaseUrl = 'https://vndb.org';
 
   /// Current app version (keep in sync with pubspec.yaml).
-  static const String appVersion = '1.3.0';
+  static const String appVersion = '1.3.1';
 
   /// GitHub releases API endpoint for update checking.
   static const String githubReleasesApi =
