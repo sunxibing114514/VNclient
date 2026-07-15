@@ -1,20 +1,18 @@
 name: Build iOS (Unsigned IPA)
 
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  build_ios:
+  build-ios:
+    name: Build iOS IPA
     runs-on: macos-latest
     timeout-minutes: 30
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Fix pubspec.yaml (name & intl)
         run: |
@@ -38,31 +36,23 @@ jobs:
           flutter create --platforms=ios --org=com.hjy --project-name=vnclient .
           sed -i '' 's/^name: .*/name: vnclient/' pubspec.yaml
           sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
-          echo "=== 生成 iOS 平台后的 pubspec.yaml ==="
-          grep -E "^(name|intl):" pubspec.yaml
 
       - name: Set Bundle ID
         run: |
           cd ios
           sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = com.hjy.vnclient;/g' Runner.xcodeproj/project.pbxproj
-          grep "PRODUCT_BUNDLE_IDENTIFIER" Runner.xcodeproj/project.pbxproj | head -5
           cd ..
 
       - name: Disable code signing
         run: |
-          # 修改 Runner 项目签名配置
           sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGN_IDENTITY = "Apple Development"/CODE_SIGN_IDENTITY = ""/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer"/CODE_SIGN_IDENTITY = ""/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/DEVELOPMENT_TEAM = .*;/DEVELOPMENT_TEAM = "";/g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/"CODE_SIGN_IDENTITY[s]* = .*/"CODE_SIGN_IDENTITY" = "";/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGNING_ALLOWED = YES;/CODE_SIGNING_ALLOWED = NO;/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGNING_REQUIRED = YES;/CODE_SIGNING_REQUIRED = NO;/g' ios/Runner.xcodeproj/project.pbxproj
-          
-          echo "=== Runner 签名配置已禁用 ==="
-          grep -E "CODE_SIGN_STYLE|CODE_SIGN_IDENTITY|DEVELOPMENT_TEAM|CODE_SIGNING_ALLOWED|CODE_SIGNING_REQUIRED" ios/Runner.xcodeproj/project.pbxproj | head -10
 
-      - name: Fix Podfile platform version
+      - name: Fix Podfile
         run: |
           cd ios
           if [ ! -f Podfile ]; then
@@ -92,31 +82,32 @@ jobs:
               ' Podfile
             fi
           fi
-          echo "=== Podfile 配置 ==="
-          cat Podfile | grep -E "platform :ios|CODE_SIGNING_ALLOWED"
           cd ..
 
-      - name: Install CocoaPods dependencies
+      - name: Install CocoaPods
         run: |
           cd ios
           pod install --repo-update
           cd ..
 
-      - name: Build iOS (unsigned)
+      - name: Build iOS
         run: |
           flutter build ios --release --no-codesign
           
-          mkdir -p build/ios/ipa/Payload
-          cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
-          cd build/ios/ipa
-          zip -r ../VNclient-unsigned.ipa Payload/
-          cd -
+          # 创建 Payload 目录结构
+          ln -sf ./build/ios/iphoneos Payload
+          
+          # 对 Frameworks 进行占位签名（绕过签名检查）
+          find Payload/Runner.app/Frameworks -type d -name "*.framework" -exec codesign --force --sign - --preserve-metadata=identifier,entitlements {} \;
+          
+          # 打包成 IPA（文件名包含时间戳）
+          zip -r9 VNclient_ios_$(date +%Y%m%d_%H%M%S).ipa Payload/Runner.app
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VNclient-unsigned-ipa
-          path: build/ios/VNclient-unsigned.ipa
+          name: VNclient-ios-ipa
+          path: VNclient_ios_*.ipa
 
       - name: Upload .app artifact
         uses: actions/upload-artifact@v4
