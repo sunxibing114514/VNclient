@@ -45,6 +45,30 @@ jobs:
           flutter create --platforms=ios --org=com.hjy --project-name=vnclient .
           sed -i '' 's/^name: .*/name: vnclient/' pubspec.yaml
 
+      - name: Generate iOS app icon
+        run: |
+          # 仅生成 iOS 图标，Android 维持仓库现有 ic_launcher。
+          # 需要先在仓库放一张 assets/appicon.png（推荐 1024×1024，512 也可，会放大）。
+          if [ ! -f assets/appicon.png ]; then
+            echo "assets/appicon.png 不存在，跳过图标生成（使用默认图标）"
+            exit 0
+          fi
+
+          # flutter_launcher_icons 配置（top-level key，单独文件）
+          cat > flutter_launcher_icons.yaml <<'EOF'
+          flutter_launcher_icons:
+            android: false
+            ios: true
+            image_path: "assets/appicon.png"
+            remove_alpha_ios: true
+          EOF
+
+          # 用 flutter pub add 自动解析兼容版本，避免手写版本号冲突
+          flutter pub add --dev flutter_launcher_icons
+          dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
+          echo "=== iOS 图标生成完成 ==="
+          ls -la ios/Runner/Assets.xcassets/AppIcon.appiconset/ | head -20
+
       - name: Set Bundle ID
         run: |
           sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = com.hjy.vnclient;/g' ios/Runner.xcodeproj/project.pbxproj
