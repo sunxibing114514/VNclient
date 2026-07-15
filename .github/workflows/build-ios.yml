@@ -16,7 +16,9 @@ jobs:
 
       - name: Fix pubspec.yaml (name & intl)
         run: |
-          sed -i '' 's/^name: VNclient/name: vnclient/' pubspec.yaml
+          # 仓库里 name 实际是 vndb_app，统一改成 vnclient 以匹配 --project-name
+          sed -i '' 's/^name: .*/name: vnclient/' pubspec.yaml
+          # Flutter 3.24.0 的 flutter_localizations 依赖 intl 0.19.x
           sed -i '' 's/intl: \^0.20.2/intl: \^0.19.0/g' pubspec.yaml
           echo "=== 修改后的 pubspec.yaml 关键字段 ==="
           grep -E "^(name|intl):" pubspec.yaml
@@ -39,18 +41,22 @@ jobs:
 
       - name: Set Bundle ID
         run: |
-          cd ios
-          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = com.hjy.vnclient;/g' Runner.xcodeproj/project.pbxproj
-          cd ..
+          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = com.hjy.vnclient;/g' ios/Runner.xcodeproj/project.pbxproj
 
       - name: Disable code signing
         run: |
-          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/CODE_SIGN_IDENTITY = "Apple Development"/CODE_SIGN_IDENTITY = ""/g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer"/CODE_SIGN_IDENTITY = ""/g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/DEVELOPMENT_TEAM = .*;/DEVELOPMENT_TEAM = "";/g' ios/Runner.xcodeproj/project.pbxproj
+          # 关键：不要把 CODE_SIGN_STYLE 改成 Manual！
+          # Manual 在没有 provisioning profile 时会让 xcodebuild 失败，Flutter 随后
+          # 会误报 "Building a deployable iOS app requires a selected Development Team"，
+          # 即使已经传了 --no-codesign（--no-codesign 只负责向 xcodebuild 传入
+          # CODE_SIGNING_ALLOWED=NO，无法消除 Manual 风格的预校验失败）。
+          # 这里只做安全清理：删除 DEVELOPMENT_TEAM、清空 CODE_SIGN_IDENTITY。
+          sed -i '' '/DEVELOPMENT_TEAM/d' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_IDENTITY = .*/CODE_SIGN_IDENTITY = "";/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGNING_ALLOWED = YES;/CODE_SIGNING_ALLOWED = NO;/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGNING_REQUIRED = YES;/CODE_SIGNING_REQUIRED = NO;/g' ios/Runner.xcodeproj/project.pbxproj
+          echo "=== pbxproj 签名相关字段 ==="
+          grep -E "CODE_SIGN_STYLE|CODE_SIGN_IDENTITY|DEVELOPMENT_TEAM|CODE_SIGNING_(ALLOWED|REQUIRED)" ios/Runner.xcodeproj/project.pbxproj || true
 
       - name: Fix Podfile
         run: |
@@ -67,6 +73,7 @@ jobs:
             echo "    flutter_additional_ios_build_settings(target)" >> Podfile
             echo "    target.build_configurations.each do |config|" >> Podfile
             echo "      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'" >> Podfile
+            echo "      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'" >> Podfile
             echo "    end" >> Podfile
             echo "  end" >> Podfile
             echo "end" >> Podfile
@@ -92,16 +99,44 @@ jobs:
 
       - name: Build iOS
         run: |
+          # flutter build 在 --no-codesign 下仍可能因 pbxproj 签名配置不一致，
+          # 在构建后的校验阶段误报 "Development Team required"。但只要 xcodebuild
+          # 实际成功，Runner.app 就已经生成，可以直接打包。
+          set +e
           flutter build ios --release --no-codesign
-          
-          # 创建 Payload 目录结构
-          ln -sf ./build/ios/iphoneos Payload
-          
+          set -e
+
+          # 如果 Runner.app 不存在（说明 xcodebuild 真的失败了），直接跑 xcodebuild
+          # 查看真实错误，并尝试生成 .app。
+          if [ ! -d build/ios/iphoneos/Runner.app ]; then
+            echo "=== Runner.app 不存在，直接运行 xcodebuild 查看真实错误 ==="
+            cd ios
+            xcodebuild \
+              -workspace Runner.xcworkspace \
+              -scheme Runner \
+              -configuration Release \
+              -sdk iphoneos \
+              -destination 'generic/platform=ios' \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              build
+            cd ..
+          fi
+
+          # 创建 Payload 目录结构并拷贝 .app（不用软链接，避免 zip 行为不一致）
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+
           # 对 Frameworks 进行占位签名（绕过签名检查）
-          find Payload/Runner.app/Frameworks -type d -name "*.framework" -exec codesign --force --sign - --preserve-metadata=identifier,entitlements {} \;
-          
+          if [ -d Payload/Runner.app/Frameworks ]; then
+            find Payload/Runner.app/Frameworks -type d -name "*.framework" \
+              -exec codesign --force --sign - --preserve-metadata=identifier,entitlements {} \;
+          fi
+
           # 打包成 IPA（文件名包含时间戳）
-          zip -r9 VNclient_ios_$(date +%Y%m%d_%H%M%S).ipa Payload/Runner.app
+          zip -r9 "VNclient_ios_$(date +%Y%m%d_%H%M%S).ipa" Payload/Runner.app
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
