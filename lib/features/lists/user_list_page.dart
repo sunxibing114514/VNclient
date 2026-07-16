@@ -10,7 +10,10 @@ import '../../core/l10n/app_localizations.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/detail_providers.dart';
 import '../../core/providers/endpoints_provider.dart';
+import '../../core/providers/theme_provider.dart';
+import '../../core/theme/title_resolver.dart';
 import '../../widgets/section_header.dart';
+import '../../widgets/vndb_icons.dart';
 import '../vn_detail/list_edit_dialog.dart';
 
 /// A tabbed view of the user's VN list. The top bar shows all available
@@ -334,14 +337,27 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
   }
 }
 
-class _ListEntryTile extends StatelessWidget {
+class _ListEntryTile extends ConsumerWidget {
   const _ListEntryTile({required this.entry, required this.onRefresh});
   final dynamic entry;
   final Future<void> Function() onRefresh;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final vn = entry.vn;
+    final titleMode =
+        ref.watch(themeNotifierProvider.select((s) => s.titleDisplay));
+    final title = vn == null
+        ? entry.id
+        : TitleResolver.resolveSimple(
+            vn.title as String? ?? entry.id,
+            vn.alttitle as String?,
+            titleMode,
+          );
+    final langs = vn?.languages as List<String>? ?? const <String>[];
+    final plats = vn?.platforms as List<String>? ?? const <String>[];
+    final labels = (entry.labels as List?) ?? const [];
+
     return Dismissible(
       key: ValueKey(entry.id),
       direction: DismissDirection.endToStart,
@@ -415,7 +431,7 @@ class _ListEntryTile extends StatelessWidget {
                   child: const Icon(Icons.book),
                 ),
           title: Text(
-            vn?.title ?? entry.id,
+            title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontWeight: FontWeight.w600),
@@ -424,12 +440,28 @@ class _ListEntryTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 4),
+              // Top row: list status icons + language flags + platform icons.
+              if (labels.isNotEmpty ||
+                  langs.isNotEmpty ||
+                  plats.isNotEmpty)
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    for (final l in labels)
+                      if (l.id is int && l.id >= 1 && l.id <= 6)
+                        VndbIcons.listImage(l.id as int, size: 16),
+                    if (langs.isNotEmpty) VndbIcons.langRow(langs),
+                    if (plats.isNotEmpty) VndbIcons.platRow(plats),
+                  ],
+                ),
               if (entry.vote != null)
                 Text('投票: ${(entry.vote / 10).toStringAsFixed(1)}'),
-              if (entry.labels != null && entry.labels.isNotEmpty)
+              if (labels.isNotEmpty)
                 Wrap(
                   spacing: 4,
-                  children: entry.labels
+                  children: labels
                       .map<Widget>((l) => Chip(
                             materialTapTargetSize:
                                 MaterialTapTargetSize.shrinkWrap,

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -22,18 +24,24 @@ class ThemedBackground extends ConsumerWidget {
 
     if (bg.id == 'none') return child;
 
+    final image = bg.id == 'custom' && bg.customPath != null
+        ? Image.file(
+            File(bg.customPath!),
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+          )
+        : Image.asset(
+            bg.asset,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+          );
+
     return Stack(
       children: [
         // Background image, covering the full screen. Kept in a separate
         // repaint boundary so route transitions don't clear it.
         Positioned.fill(
-          child: RepaintBoundary(
-            child: Image.asset(
-              bg.asset,
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-            ),
-          ),
+          child: RepaintBoundary(child: image),
         ),
         // Semi-transparent scrim for text legibility.
         Positioned.fill(

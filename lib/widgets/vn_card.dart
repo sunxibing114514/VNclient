@@ -1,18 +1,26 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/models/vn.dart';
+import '../core/providers/theme_provider.dart';
+import '../core/theme/title_resolver.dart';
 import 'rating_bar.dart';
+import 'vndb_icons.dart';
 
 /// A card representing a single visual novel, used in lists and grids.
-class VnCard extends StatelessWidget {
+class VnCard extends ConsumerWidget {
   const VnCard({super.key, required this.vn, this.onTap});
 
   final Vn vn;
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final titleMode = ref.watch(
+        themeNotifierProvider.select((s) => s.titleDisplay));
+    final title = TitleResolver.resolve(vn, titleMode);
+    final subtitle = TitleResolver.secondary(vn, titleMode);
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -29,24 +37,34 @@ class VnCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      vn.title,
+                      title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
                     ),
+                    if (subtitle != null && subtitle != title) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
                     const SizedBox(height: 4),
                     Wrap(
                       spacing: 6,
                       runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         if (vn.released != null)
                           _InfoChip(icon: Icons.calendar_today, label: vn.released!),
-                        _InfoChip(
-                          icon: Icons.translate,
-                          label: vn.languages.join(', '),
-                        ),
+                        if (vn.languages.isNotEmpty)
+                          VndbIcons.langRow(vn.languages),
+                        if (vn.platforms.isNotEmpty)
+                          VndbIcons.platRow(vn.platforms),
                       ],
                     ),
                     const SizedBox(height: 6),

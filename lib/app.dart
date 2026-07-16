@@ -22,18 +22,17 @@ class VndbApp extends ConsumerWidget {
     final locale = ref.watch(localeNotifierProvider);
 
     final hasBg = theme.backgroundId != 'none';
+    final bg = theme.background;
     final darkTheme = hasBg
-        ? AppTheme.forBackground(AppBackgrounds.byId(theme.backgroundId))
+        ? AppTheme.forBackground(bg)
         : AppTheme.dark(seedColor: theme.effectiveSeedColor);
     final lightTheme = hasBg
-        ? AppTheme.forBackground(AppBackgrounds.byId(theme.backgroundId))
+        ? AppTheme.forBackground(bg)
         : AppTheme.light(seedColor: theme.effectiveSeedColor);
     // When a background is active, force the theme mode to match the
     // background's brightness so text colors are correct.
     final effectiveMode = hasBg
-        ? (AppBackgrounds.byId(theme.backgroundId).isDark
-            ? ThemeMode.dark
-            : ThemeMode.light)
+        ? (bg.isDark ? ThemeMode.dark : ThemeMode.light)
         : theme.mode;
 
     // While the persisted token is being validated, show a splash.

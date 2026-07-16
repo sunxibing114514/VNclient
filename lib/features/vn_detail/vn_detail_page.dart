@@ -11,11 +11,15 @@ import '../../core/models/character.dart';
 import '../../core/models/vn.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/detail_providers.dart';
+import '../../core/providers/theme_provider.dart';
 import '../../core/router/app_router.dart';
+import '../../core/theme/title_resolver.dart';
 import '../../widgets/async_value_widget.dart';
 import '../../widgets/nsf_image.dart';
 import '../../widgets/section_header.dart';
+import '../../widgets/vndb_icons.dart';
 import 'list_edit_dialog.dart';
+import 'vote_dialog.dart';
 
 /// Detailed view for a single visual novel.
 class VnDetailPage extends ConsumerWidget {
@@ -90,6 +94,10 @@ class _VnDetailViewState extends ConsumerState<_VnDetailView>
     final vn = widget.vn;
     final releases = ref.watch(releasesByVnProvider(widget.id));
     final characters = ref.watch(charactersByVnProvider(widget.id));
+    final titleMode =
+        ref.watch(themeNotifierProvider.select((s) => s.titleDisplay));
+    final displayTitle = TitleResolver.resolve(vn, titleMode);
+    final secondaryTitle = TitleResolver.secondary(vn, titleMode);
 
     return CustomScrollView(
       slivers: [
@@ -159,7 +167,7 @@ class _VnDetailViewState extends ConsumerState<_VnDetailView>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        vn.title,
+                        displayTitle,
                         style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -171,10 +179,11 @@ class _VnDetailViewState extends ConsumerState<_VnDetailView>
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if (vn.alttitle != null && vn.alttitle!.isNotEmpty) ...[
+                      if (secondaryTitle != null &&
+                          secondaryTitle != displayTitle) ...[
                         const SizedBox(height: 4),
                         Text(
-                          vn.alttitle!,
+                          secondaryTitle,
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.white.withValues(alpha: 0.8),
@@ -232,6 +241,7 @@ class _VnDetailViewState extends ConsumerState<_VnDetailView>
                   value: vn.rating != null
                       ? (vn.rating! / 10).toStringAsFixed(1)
                       : '-',
+                  onTap: () => _openVote(context, vn),
                 ),
                 _StatColumn(
                   label: '时长',
@@ -293,6 +303,27 @@ class _VnDetailViewState extends ConsumerState<_VnDetailView>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('已复制链接: $url'), duration: const Duration(seconds: 2)),
     );
+  }
+
+  /// Opens the quick vote dialog. Requires an authenticated user with list
+  /// write permission (voting is implemented via PATCH /ulist/<id> with the
+  /// `vote` field, which is the VNDB mechanism for casting a rating).
+  void _openVote(BuildContext context, Vn vn) {
+    final auth = ref.read(authNotifierProvider);
+    if (!auth.canWriteList) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先登录并在 VNDB 获取 listwrite 权限的 Token 以投票')),
+      );
+      return;
+    }
+    showDialog<void>(
+      context: context,
+      builder: (_) => VoteDialog(vnId: vn.id, vnTitle: vn.title),
+    ).then((voted) {
+      if (voted == true && context.mounted) {
+        ref.invalidate(vnDetailProvider(vn.id));
+      }
+    });
   }
 }
 
@@ -366,31 +397,41 @@ class _GlassAppBarBackground extends StatelessWidget {
 
 /// A three-column stat display: label on top, value below.
 class _StatColumn extends StatelessWidget {
-  const _StatColumn({required this.label, required this.value});
+  const _StatColumn({required this.label, required this.value, this.onTap});
   final String label;
   final String value;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final content = Column(
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+    if (onTap == null) return Expanded(child: content);
     return Expanded(
-      child: Column(
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: content,
+        ),
       ),
     );
   }
@@ -424,8 +465,18 @@ class _OverviewTab extends ConsumerWidget {
         _Section(title: '详情', child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _InfoRow('平台', vn.platforms.join(', ')),
-            _InfoRow('语言', vn.languages.join(', ')),
+            if (vn.platforms.isNotEmpty)
+              _IconInfoRow(
+                label: '平台',
+                icons: VndbIcons.platRow(vn.platforms, size: 16),
+                text: vn.platforms.join(', '),
+              ),
+            if (vn.languages.isNotEmpty)
+              _IconInfoRow(
+                label: '语言',
+                icons: VndbIcons.langRow(vn.languages, size: 16),
+                text: vn.languages.join(', '),
+              ),
             if (vn.olang != null) _InfoRow('原始语言', vn.olang!),
             if (vn.lengthMinutes != null)
               _InfoRow('时长', '约 ${(vn.lengthMinutes! / 60).toStringAsFixed(1)} 小时 (${vn.lengthLabel})'),
@@ -640,8 +691,13 @@ class _Section extends StatelessWidget {
   }
 }
 
-/// A collapsible tags section. Shows the first few tags by default and can be
-/// expanded to show all. Tap the header to toggle.
+/// A tags section with category filtering (content / technical / ero),
+/// spoiler-level control (hide / show minor / spoil me) and a summary view.
+///
+/// Mirrors the VNDB website tag panel:
+/// - Categories: 全部 (all) / 内容 (cont) / 技术 (tech) / 色情 (ero)
+/// - Spoiler levels: 隐藏剧透 (0) / 显示轻微剧透 (1) / 全部剧透 (2)
+/// - Summary mode: collapses the list to the top-rated tags per category.
 class _CollapsibleTagsSection extends StatefulWidget {
   const _CollapsibleTagsSection({required this.tags});
   final List<dynamic> tags;
@@ -652,60 +708,121 @@ class _CollapsibleTagsSection extends StatefulWidget {
 }
 
 class _CollapsibleTagsSectionState extends State<_CollapsibleTagsSection> {
-  bool _expanded = false;
-  static const int _collapsedCount = 6;
+  /// Selected category filter: null = all.
+  String? _category;
+  /// Maximum spoiler level to display (0, 1 or 2).
+  int _spoilerLevel = 0;
+  /// Whether the summary (top tags only) view is active.
+  bool _summary = true;
+  static const int _summaryCount = 8;
 
   @override
   Widget build(BuildContext context) {
-    final showAll = _expanded || widget.tags.length <= _collapsedCount;
-    final visible =
-        showAll ? widget.tags : widget.tags.sublist(0, _collapsedCount);
+    final filtered = widget.tags.where((t) {
+      if (_category != null && t.category != _category) return false;
+      // Hide tags whose spoiler level exceeds the chosen threshold.
+      if ((t.spoiler as int) > _spoilerLevel) return false;
+      return true;
+    }).toList()
+      ..sort((a, b) => (b.rating as num).compareTo(a.rating as num));
+
+    final visible = _summary && filtered.length > _summaryCount
+        ? filtered.sublist(0, _summaryCount)
+        : filtered;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          InkWell(
-            onTap: widget.tags.length > _collapsedCount
-                ? () => setState(() => _expanded = !_expanded)
-                : null,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  Text(
-                    '标签 (${widget.tags.length})',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Text(
+                  '标签 (${widget.tags.length})',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
-                  if (widget.tags.length > _collapsedCount) ...[
-                    const SizedBox(width: 4),
-                    Icon(
-                      _expanded
-                          ? Icons.expand_less
-                          : Icons.expand_more,
-                      size: 20,
-                    ),
-                  ],
-                ],
-              ),
+                ),
+                const Spacer(),
+                if (filtered.length > _summaryCount)
+                  TextButton.icon(
+                    icon: Icon(_summary ? Icons.expand : Icons.compress,
+                        size: 16),
+                    label: Text(_summary ? '全部' : '摘要'),
+                    onPressed: () =>
+                        setState(() => _summary = !_summary),
+                  ),
+              ],
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
+          // Category filter chips.
           Wrap(
             spacing: 6,
-            runSpacing: 6,
-            children: visible.map<Widget>((t) {
-              return ActionChip(
-                label: Text('${t.name} (${t.rating.toStringAsFixed(1)})'),
-                onPressed: () => context.push('/tag/${t.id}'),
-              );
-            }).toList(),
+            runSpacing: 4,
+            children: [
+              _filterChip('全部', null),
+              _filterChip('内容', 'cont'),
+              _filterChip('技术', 'tech'),
+              _filterChip('色情', 'ero'),
+            ],
           ),
+          const SizedBox(height: 4),
+          // Spoiler-level segmented control.
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              _spoilerChip('隐藏剧透', 0),
+              _spoilerChip('显示轻微剧透', 1),
+              _spoilerChip('全部剧透', 2),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (visible.isEmpty)
+            Text('当前筛选下无标签',
+                style: Theme.of(context).textTheme.bodySmall)
+          else
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: visible.map<Widget>((t) {
+                final lie = (t.lie as bool?) == true;
+                return ActionChip(
+                  avatar: lie
+                      ? const Icon(Icons.close, size: 14)
+                      : (_spoilerLevel > 0 && (t.spoiler as int) > 0
+                          ? const Icon(Icons.warning_amber,
+                              size: 14)
+                          : null),
+                  label: Text('${t.name} (${(t.rating as num).toStringAsFixed(1)})'),
+                  onPressed: () => context.push('/tag/${t.id}'),
+                );
+              }).toList(),
+            ),
         ],
       ),
+    );
+  }
+
+  Widget _filterChip(String label, String? value) {
+    final selected = _category == value;
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => setState(() => _category = selected ? null : value),
+    );
+  }
+
+  Widget _spoilerChip(String label, int value) {
+    final selected = _spoilerLevel == value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => setState(() => _spoilerLevel = value),
     );
   }
 }
@@ -729,6 +846,48 @@ class _InfoRow extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall),
           ),
           Expanded(child: Text(value, style: Theme.of(context).textTheme.bodyMedium)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Like [_InfoRow] but leads the value with a row of icon widgets (e.g.
+/// language flags / platform icons) followed by the textual code list.
+class _IconInfoRow extends StatelessWidget {
+  const _IconInfoRow({
+    required this.label,
+    required this.icons,
+    required this.text,
+  });
+  final String label;
+  final Widget icons;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    if (text.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 64,
+            child: Text(label,
+                style: Theme.of(context).textTheme.bodySmall),
+          ),
+          Expanded(
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                icons,
+                Text(text, style: Theme.of(context).textTheme.bodyMedium),
+              ],
+            ),
+          ),
         ],
       ),
     );
