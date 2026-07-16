@@ -76,3 +76,101 @@
 | R18 内容 | 全部 / 仅 R18 / 非 R18 (基于 image.sexual 字段客户端过滤) |
 | 免费 | 全部 / 仅免费 / 非免费 (通过 /release 端点 freeware 过滤器预查询) |
 | 引擎 | 输入引擎名称, 如 KiriKiri (通过 /release 端点 engine 过滤器预查询) |
+
+
+# VNDB Client v1.3.2 Changelog
+
+## 通用
+
+- 版本号升级至 **1.3.2**
+
+## 新功能
+
+### 1. 角色 (Character) 高级筛选
+
+独立角色列表页新增完整高级筛选面板, 覆盖 VNDB `/character` 端点的所有可用过滤器:
+
+| 筛选项 | 说明 |
+|--------|------|
+| 关键字 | 名称/别名搜索 (`search`) |
+| 角色类型 | 主角 / 主要 / 次要 / 客串 (`role`) |
+| 血型 | A / B / AB / O (`blood_type`) |
+| 性别 | 非剧透性别 (`sex`) |
+| 真实性别 | 剧透性别 (`sex_spoil`) |
+| 性别标识 | `gender` 非剧透 |
+| 真实性别标识 | `gender_spoil` |
+| 罩杯 | AAA / AA / A-Z (`cup`) |
+| 身高 | cm 范围 (`height` `>=` / `<=`) |
+| 体重 | kg 范围 (`weight`) |
+| 三围 | 胸围 / 腰围 / 臀围范围 (`bust` / `waist` / `hips`) |
+| 年龄 | 范围 (`age`) |
+| 生日月份 | 1-12 (`birthday` `[month, 0]`) |
+| 特质 | trait ID + 剧透等级 0-2 (`trait` `[id, spoiler]`) |
+| 直接特质 | dtrait ID + 剧透等级 (`dtrait`) |
+| 配音演员 | 嵌套 staff 过滤, 输入声优 ID (`seiyuu` `['id','=',sid]`) |
+| 关联 VN | 嵌套 VN 过滤, 输入 VN ID (`vn` `['id','=',vid]`) |
+
+### 2. 制作人员 (Staff) 高级筛选
+
+Staff 列表页新增高级筛选面板:
+
+| 筛选项 | 说明 |
+|--------|------|
+| 关键字 | 名称搜索 (`search`) |
+| 语言 | `lang` |
+| 性别 | `gender` (m / f) |
+| 角色 | 预设下拉 (编剧/原画/音乐/声优等) + 自定义文本 (`role`) |
+| 外部链接 | 站点名称/URL (`extlink`) |
+| 是否主名 | 强制 `ismain = 1`, 避免别名重复 |
+
+### 3. 搜索页目标切换
+
+搜索页顶部新增 **目标筛选 Chip 行**, 可在以下 7 种目标间切换:
+
+- VN 作品 (`/vn`)
+- 角色 (`/character`)
+- 制作商 (`/producer`)
+- 制作人员 (`/staff`)
+- 发行版本 (`/release`)
+- 标签 (`/tag`)
+- 特质 (`/trait`)
+
+切换目标时清空已有结果, 使用对应的 endpoint 与列表字段进行查询, 渲染目标专属结果卡片.
+
+### 4. 背景图替换 + 自定义背景
+
+- 删除旧背景资源, 仅保留 **angel-bg-stars.jpg** 作为默认背景
+- 设置页背景选项中新增 **自定义图片**: 调用系统图库选取, 复制到 app 文档目录持久化保存
+- 自定义背景在 ThemedBackground 中通过 `Image.file` 渲染
+
+### 5. 列表条目顶部图标
+
+用户列表 (ulist) 条目副标题区域新增图标行, 依次显示:
+
+- 列表状态图标 (Playing/Finished/Stalled/Dropped/Wishlist, label id 1-6)
+- 语言旗帜 (`VndbIcons.langRow`)
+- 平台图标 (`VndbIcons.platRow`)
+
+### 6. VN 详情页 Tag 分类与剧透控制
+
+VN 详情页 Tags 区域新增两组筛选 Chip:
+
+- **分类**: 全部 / 内容 (`cont`) / 技术 (`tech`) / 色情 (`ero`)
+- **剧透等级**: 隐藏 (0) / 轻微剧透 (1) / 全部剧透 (2)
+- **聚合开关**: summary 切换, 控制是否显示聚合标签信息
+
+### 7. 投票评分功能
+
+- VN 详情页评分区域点击触发 **VoteDialog**
+- 滑块 1-10 评分, 通过 `PATCH /ulist/<id>` 写入 `vote` 字段 (10-100)
+- 已登录用户可对具体条目提交/修改/删除评分
+
+### 8. 作品名显示模式
+
+设置页新增 **作品名显示** 选项:
+
+- **罗马音** (默认): 使用 VNDB `title` 字段
+- **日文/原名**: 使用 VNDB `alttitle` 字段
+
+通过 `TitleResolver` 统一在 VN 卡片、用户列表、详情页等位置生效.
+

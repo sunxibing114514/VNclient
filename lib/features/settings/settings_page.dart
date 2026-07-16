@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_constants.dart';
@@ -211,6 +214,34 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             subtitle: Text(theme.background.displayName),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _pickBackground(context, theme.backgroundId),
+          ),
+          ListTile(
+            leading: const Icon(Icons.title),
+            title: const Text('作品名显示'),
+            subtitle: Text(theme.titleDisplay == TitleDisplayMode.japanese
+                ? '日文/原名'
+                : '罗马音'),
+            trailing: DropdownButton<TitleDisplayMode>(
+              value: theme.titleDisplay,
+              underline: const SizedBox(),
+              items: const [
+                DropdownMenuItem(
+                  value: TitleDisplayMode.romanized,
+                  child: Text('罗马音'),
+                ),
+                DropdownMenuItem(
+                  value: TitleDisplayMode.japanese,
+                  child: Text('日文/原名'),
+                ),
+              ],
+              onChanged: (m) {
+                if (m != null) {
+                  ref
+                      .read(themeNotifierProvider.notifier)
+                      .setTitleDisplay(m);
+                }
+              },
+            ),
           ),
           SwitchListTile(
             secondary: const Icon(Icons.blur_on),
@@ -433,39 +464,31 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             contentPadding: const EdgeInsets.symmetric(vertical: 8),
             content: SizedBox(
               width: 320,
-              child: ListView.builder(
+              child: ListView(
                 shrinkWrap: true,
-                itemCount: AppBackgrounds.all.length,
-                itemBuilder: (ctx, i) {
-                  final bg = AppBackgrounds.all[i];
-                  final isSelected = bg.id == selected;
-                  return ListTile(
-                    leading: ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: SizedBox(
-                        width: 40,
-                        height: 40,
-                        child: bg.asset.isEmpty
-                            ? Container(
-                                color: bg.seedColor,
-                                child: const Icon(Icons.texture,
-                                    color: Colors.white, size: 20),
-                              )
-                            : Image.asset(bg.asset, fit: BoxFit.cover),
-                      ),
+                children: [
+                  for (final bg in AppBackgrounds.all)
+                    _backgroundTile(
+                      context: ctx,
+                      bg: bg,
+                      selected: selected,
+                      onTap: () => setState(() => selected = bg.id),
                     ),
-                    title: Text(bg.displayName),
-                    subtitle: Text(
-                      '${_brightnessLabel(bg.brightness)} · #${bg.seedColor.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}',
-                      style: const TextStyle(fontSize: 11),
+                  // Custom image option (dynamic, shows preview if active).
+                  _backgroundTile(
+                    context: ctx,
+                    bg: AppBackgrounds.custom(
+                      ref.read(themeNotifierProvider).customBackgroundPath ??
+                          '',
                     ),
-                    trailing: isSelected
-                        ? Icon(Icons.check,
-                            color: Theme.of(context).colorScheme.primary)
-                        : null,
-                    onTap: () => setState(() => selected = bg.id),
-                  );
-                },
+                    selected: selected,
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await _pickCustomImage();
+                    },
+                    isCustom: true,
+                  ),
+                ],
               ),
             ),
             actions: [
@@ -487,6 +510,91 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         );
       },
     );
+  }
+
+  /// Builds a single selectable background tile.
+  Widget _backgroundTile({
+    required BuildContext context,
+    required AppBackground bg,
+    required String selected,
+    required VoidCallback onTap,
+    bool isCustom = false,
+  }) {
+    final isSelected = bg.id == selected;
+    Widget? leading;
+    if (isCustom) {
+      final path = ref.read(themeNotifierProvider).customBackgroundPath;
+      leading = ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: SizedBox(
+          width: 40,
+          height: 40,
+          child: (path != null && path.isNotEmpty && File(path).existsSync())
+              ? Image.file(File(path), fit: BoxFit.cover)
+              : Container(
+                  color: bg.seedColor,
+                  child: const Icon(Icons.add_photo_alternate,
+                      color: Colors.white, size: 20),
+                ),
+        ),
+      );
+    } else {
+      leading = ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: SizedBox(
+          width: 40,
+          height: 40,
+          child: bg.asset.isEmpty
+              ? Container(
+                  color: bg.seedColor,
+                  child: const Icon(Icons.texture,
+                      color: Colors.white, size: 20),
+                )
+              : Image.asset(bg.asset, fit: BoxFit.cover),
+        ),
+      );
+    }
+    return ListTile(
+      leading: leading,
+      title: Text(bg.displayName),
+      subtitle: Text(
+        isCustom
+            ? '从相册选择自定义图片'
+            : '${_brightnessLabel(bg.brightness)} · #${bg.seedColor.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}',
+        style: const TextStyle(fontSize: 11),
+      ),
+      trailing: isSelected
+          ? Icon(Icons.check, color: Theme.of(context).colorScheme.primary)
+          : null,
+      onTap: onTap,
+    );
+  }
+
+  /// Opens the system image picker, copies the picked file into the app's
+  /// documents directory, and activates it as the background theme.
+  Future<void> _pickCustomImage() async {
+    final picker = ImagePicker();
+    try {
+      final xFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 90,
+      );
+      if (xFile == null) return;
+      await ref
+          .read(themeNotifierProvider.notifier)
+          .setCustomBackground(File(xFile.path));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已设置自定义背景')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('选择图片失败: $e')),
+        );
+      }
+    }
   }
 
   String _brightnessLabel(Brightness b) =>

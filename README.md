@@ -96,7 +96,7 @@ lib/
 
 ## 特别感谢
 
-- 界面主题背景图片来自 [daniel-c-j/vndb-lite](https://github.com/daniel-c-j/vndb-lite)
+- 界面设计灵感来自 [daniel-c-j/vndb-lite](https://github.com/daniel-c-j/vndb-lite)
 - 感谢 [VNDB Kana API](https://api.vndb.org/kana) 提供的 API 文档
 
 ## 许可证
