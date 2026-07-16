@@ -11,7 +11,9 @@ on:
   workflow_dispatch:
 
 env:
-  FLUTTER_VERSION: '3.24.5'
+  # Flutter 3.27+ 的 flutter_localizations 才锁定 intl 0.20.x,
+  # 与 pubspec.yaml 中 intl ^0.20.2 兼容.
+  FLUTTER_VERSION: '3.29.3'
   JAVA_VERSION: '17'
 
 jobs:
