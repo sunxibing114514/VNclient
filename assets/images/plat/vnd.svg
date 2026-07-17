@@ -1,0 +1,5 @@
+<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+<path d="M3.14 2h9.71c.63 0 1.13.5 1.13 1.14v9.71c0 .63-.5 1.13-1.13 1.13H3.14c-.63 0-1.14-.5-1.14-1.13V3.14C2 2.5 2.5 2 3.14 2z" fill="#303030" stroke="#bfbfbf" stroke-width="2.08" paint-order="stroke fill markers"/>
+<path d="m2.5 2 2.3 6.01h.83l2.42-6.04H6.8L5.3 6.43 3.66 2z" fill="#bfbfbf"/>
+<path d="M7.94 2v5.94h.9v-4.5l3.03 4.53h.87V2h-.87v4.4L8.84 2zM6.8 8.01H3.06v5.97h3.78v-.71h.87V8.8h-.9zm-2.76.76h1.9v4.53h-1.9zm8.73.04v1.13h-1.73V8.81h-1.6v1.81h3.33v2.65h-.94v.75H8.69v-.75h-.98v-1.33h1.74v1.33h2.38v-1.33h-.8v-.6H8.7v-.68h-.98V8.84h.98v-.79h3.14v.76z" fill="#bfbfbf"/>
+</svg>

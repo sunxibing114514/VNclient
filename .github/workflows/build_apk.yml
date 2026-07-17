@@ -1,0 +1,157 @@
+name: 构建 APK (v7a / v8a / x86-64) + 源码 zip
+
+# 触发条件:
+#   1. 推送 v1.3.2* 形式的 tag
+#   2. 手动在工作流页面触发
+on:
+  push:
+    tags:
+      - 'v1.3.2*'
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  # Flutter 3.27+ 的 flutter_localizations 才锁定 intl 0.20.x,
+  # 与 pubspec.yaml 中 intl ^0.20.2 兼容.
+  FLUTTER_VERSION: '3.29.3'
+  JAVA_VERSION: '17'
+
+jobs:
+  build:
+    name: 构建 ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # armeabi-v7a: 32 位 ARM, 覆盖老旧 Android 设备
+          - abi: armeabi-v7a
+            target-platform: android-arm
+            artifact-name: VNclient-v1.3.2-android-armeabi-v7a.apk
+          # arm64-v8a: 64 位 ARM, 覆盖主流现代 Android 设备
+          - abi: arm64-v8a
+            target-platform: android-arm64
+            artifact-name: VNclient-v1.3.2-android-arm64-v8a.apk
+          # x86-64: 模拟器 / Chromebook / Intel 平板
+          - abi: x86-64
+            target-platform: android-x64
+            artifact-name: VNclient-v1.3.2-android-x86-64.apk
+
+    steps:
+      - name: 拉取仓库代码
+        uses: actions/checkout@v4
+
+      - name: 配置 JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: 配置 Flutter ${{ env.FLUTTER_VERSION }}
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: 显示 Flutter / Dart 版本
+        run: |
+          flutter --version
+          dart --version
+
+      - name: 读取项目依赖
+        run: flutter pub get
+
+      - name: 静态分析 (允许失败, 仅提示)
+        run: flutter analyze || true
+
+      - name: 构建 ${{ matrix.abi }} Release APK
+        run: |
+          flutter build apk \
+            --release \
+            --target-platform ${{ matrix.target-platform }} \
+            --split-per-abi \
+            --no-tree-shake-icons
+
+      - name: 重命名 APK 输出
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          # --split-per-abi 输出文件名格式: app-<abi>-release.apk
+          SRC="build/app/outputs/flutter-apk/app-${{ matrix.abi }}-release.apk"
+          if [ ! -f "$SRC" ]; then
+            echo "::error::未找到构建产物 $SRC"
+            ls -la build/app/outputs/flutter-apk/ || true
+            exit 1
+          fi
+          cp "$SRC" "output/${{ matrix.artifact-name }}"
+          ls -la output/
+
+      - name: 上传 APK 到工作流产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: output/${{ matrix.artifact-name }}
+          if-no-files-found: error
+          retention-days: 30
+
+  source-zip:
+    name: 生成源码 zip
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取仓库代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 打包源码 zip (排除构建产物与缓存)
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          # 使用 git archive 保证只打包仓库追踪的文件, 自动忽略 build/ .dart_tool/ 等
+          git archive --format=zip --prefix=VNclient-v1.3.2-src/ -o output/VNclient-v1.3.2-src.zip HEAD
+          # 附带 CHANGELOG 与版本信息
+          cp CHANGELOG.md output/CHANGELOG.md || true
+          ls -la output/
+          unzip -l output/VNclient-v1.3.2-src.zip | head -20
+
+      - name: 上传源码 zip 到工作流产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: VNclient-v1.3.2-src
+          path: output/VNclient-v1.3.2-src.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: 发布 Release
+    needs: [build, source-zip]
+    runs-on: ubuntu-latest
+    # 仅在打 tag 时创建 Release, 手动触发只上传工作流产物
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - name: 下载所有产物
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: false
+
+      - name: 整理发布目录
+        run: |
+          set -euo pipefail
+          mkdir -p staging
+          find release-assets -type f \( -name '*.apk' -o -name '*-src.zip' \) -exec cp {} staging/ \;
+          ls -la staging/
+
+      - name: 创建 GitHub Release 并上传资产
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: VNclient ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: staging/*
