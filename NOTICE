@@ -1,0 +1,23 @@
+NOTICE
+
+This repository, VNclient (https://github.com/sunxibing114514/VNclient), 
+contains visual design elements derived from the following Apache 2.0 
+open-source project:
+
+Project Name: VNDB Lite
+Source: https://github.com/daniel-c-j/vndb-lite
+Copyright (c) 2025 Daniel C-J and other contributors
+
+The visual assets used in this repository (specifically including theme 
+color schemes, interface images, and related style resources) are derived 
+from the above-mentioned VNDB Lite project and are used and distributed 
+in compliance with the terms of the Apache License, Version 2.0.
+A copy of the license can be obtained at 
+http://www.apache.org/licenses/LICENSE-2.0, or by viewing the LICENSE 
+file in the root directory of the VNDB Lite project.
+
+All other original code, resources, and content in this repository are 
+subject to the terms of the LICENSE file (if any) located in the root 
+directory of this repository.
+
+Modifications made: adjusted color saturation and resized icons.
