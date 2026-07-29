@@ -9,10 +9,12 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/release.dart';
 import '../../core/models/character.dart';
 import '../../core/models/vn.dart';
+import '../../core/services/translation_service.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/detail_providers.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/router/app_router.dart';
+import '../../core/services/browsing_history_service.dart';
 import '../../core/theme/title_resolver.dart';
 import '../../widgets/async_value_widget.dart';
 import '../../widgets/nsf_image.dart';
@@ -81,6 +83,10 @@ class _VnDetailViewState extends ConsumerState<_VnDetailView>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    // Record this VN in the browsing history (most-recent first).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(browsingHistoryProvider.notifier).record(widget.id);
+    });
   }
 
   @override
@@ -94,6 +100,7 @@ class _VnDetailViewState extends ConsumerState<_VnDetailView>
     final vn = widget.vn;
     final releases = ref.watch(releasesByVnProvider(widget.id));
     final characters = ref.watch(charactersByVnProvider(widget.id));
+    final ratingRank = ref.watch(vnRatingRankProvider(widget.id));
     final titleMode =
         ref.watch(themeNotifierProvider.select((s) => s.titleDisplay));
     final displayTitle = TitleResolver.resolve(vn, titleMode);
@@ -226,7 +233,7 @@ class _VnDetailViewState extends ConsumerState<_VnDetailView>
           ),
         ),
 
-        // --- 3. Stats area: 3 columns (votes / rating / duration) ---
+        // --- 3. Stats area: 4 columns (votes / rating / rank / duration) ---
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
@@ -242,6 +249,14 @@ class _VnDetailViewState extends ConsumerState<_VnDetailView>
                       ? (vn.rating! / 10).toStringAsFixed(1)
                       : '-',
                   onTap: () => _openVote(context, vn),
+                ),
+                _StatColumn(
+                  label: '贝叶斯排名',
+                  value: ratingRank.when(
+                    data: (rank) => rank != null ? '#$rank' : '-',
+                    loading: () => '...',
+                    error: (_, __) => '-',
+                  ),
                 ),
                 _StatColumn(
                   label: '时长',
@@ -456,11 +471,8 @@ class _OverviewTab extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // Description
-        _Section(title: '简介', child: Text(
-          vn.description ?? '暂无简介',
-          style: Theme.of(context).textTheme.bodyMedium,
-        )),
+        // Description with translation
+        _DescriptionSection(description: vn.description),
         // Info rows
         _Section(title: '详情', child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -685,6 +697,140 @@ class _Section extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           child,
+        ],
+      ),
+    );
+  }
+}
+
+/// Description section with MyMemory translation support.
+///
+/// Shows the original description and a translate button. When tapped, the
+/// text is sent to the MyMemory API (en→zh) and the translated result is
+/// displayed below the original. The user can toggle between original and
+/// translated views.
+class _DescriptionSection extends StatefulWidget {
+  const _DescriptionSection({this.description});
+  final String? description;
+
+  @override
+  State<_DescriptionSection> createState() => _DescriptionSectionState();
+}
+
+class _DescriptionSectionState extends State<_DescriptionSection> {
+  static final _translator = TranslationService();
+  String? _translated;
+  bool _translating = false;
+  bool _showTranslated = false;
+  String? _error;
+
+  Future<void> _translate() async {
+    final desc = widget.description;
+    if (desc == null || desc.isEmpty) return;
+    setState(() {
+      _translating = true;
+      _error = null;
+    });
+    try {
+      final result = await _translator.translate(
+        desc,
+        sourceLang: 'en',
+        targetLang: 'zh',
+      );
+      if (!mounted) return;
+      setState(() {
+        _translated = result;
+        _translating = false;
+        _showTranslated = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _translating = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final desc = widget.description ?? '暂无简介';
+    final hasDescription = widget.description != null &&
+        widget.description!.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                '简介',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              if (hasDescription) ...[
+                if (_showTranslated && _translated != null)
+                  TextButton.icon(
+                    icon: const Icon(Icons.translate, size: 16),
+                    label: const Text('原文'),
+                    onPressed: () =>
+                        setState(() => _showTranslated = false),
+                  )
+                else
+                  TextButton.icon(
+                    icon: _translating
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.translate, size: 16),
+                    label: Text(_translating ? '翻译中…' : '翻译'),
+                    onPressed: _translating
+                        ? null
+                        : () {
+                            if (_translated != null) {
+                              setState(() => _showTranslated = true);
+                            } else {
+                              _translate();
+                            }
+                          },
+                  ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (_showTranslated && _translated != null) ...[
+            SelectableText(
+              _translated!,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '— 由 MyMemory API 机器翻译',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontStyle: FontStyle.italic,
+                  ),
+            ),
+          ] else
+            SelectableText(
+              desc,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          if (_error != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              '翻译失败: $_error',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.error,
+                fontSize: 12,
+              ),
+            ),
+          ],
         ],
       ),
     );

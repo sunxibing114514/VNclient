@@ -9,7 +9,7 @@ class AppConstants {
   static const String siteBaseUrl = 'https://vndb.org';
 
   /// Current app version (keep in sync with pubspec.yaml).
-  static const String appVersion = '1.3.3';
+  static const String appVersion = '1.3.4';
 
   /// GitHub releases API endpoint for update checking.
   static const String githubReleasesApi =
@@ -47,6 +47,12 @@ class AppConstants {
 
   /// SharedPreferences key for producer new-work notifications (JSON).
   static const String producerNotificationsKey = 'vndb_producer_notifications';
+
+  /// SharedPreferences key for the browsing history (JSON array of VN ids).
+  static const String browsingHistoryKey = 'vndb_browsing_history';
+
+  /// Maximum number of browsing history entries to keep.
+  static const int browsingHistoryLimit = 100;
 }
 
 /// External links displayed on the home page.

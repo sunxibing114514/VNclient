@@ -75,6 +75,8 @@ class _RandomPageState extends ConsumerState<RandomPage> {
     _LangOption('macOS', 'mac'),
     _LangOption('Android', 'and'),
     _LangOption('iOS', 'ios'),
+    _LangOption('PC-98', 'p98'),
+    _LangOption('PC-88', 'p88'),
     _LangOption('PS2', 'ps2'),
     _LangOption('PSP', 'psp'),
     _LangOption('PS Vita', 'psv'),

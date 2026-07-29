@@ -8,6 +8,7 @@ import '../../features/about/about_page.dart';
 import '../../features/follows/follow_list_page.dart';
 import '../../features/characters/character_detail_page.dart';
 import '../../features/characters/character_list_page.dart';
+import '../../features/history/browsing_history_page.dart';
 import '../../features/home/home_page.dart';
 import '../../features/lists/user_list_page.dart';
 import '../../features/login/login_page.dart';
@@ -198,6 +199,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/followed-producers',
         builder: (context, state) => const FollowListPage(),
+      ),
+      GoRoute(
+        path: '/history',
+        builder: (context, state) => const BrowsingHistoryPage(),
       ),
       GoRoute(
         path: '/random',

@@ -370,16 +370,16 @@ class _ListEntryTile extends ConsumerWidget {
       confirmDismiss: (_) async {
         return await showDialog<bool>(
           context: context,
-          builder: (_) => AlertDialog(
+          builder: (dialogContext) => AlertDialog(
             title: const Text('移除'),
             content: Text('从列表移除 ${vn?.title ?? "此条目"} 吗？'),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context, false),
+                onPressed: () => Navigator.pop(dialogContext, false),
                 child: const Text('取消'),
               ),
               TextButton(
-                onPressed: () => Navigator.pop(context, true),
+                onPressed: () => Navigator.pop(dialogContext, true),
                 child: const Text('移除'),
               ),
             ],
@@ -583,6 +583,11 @@ class ProfilePage extends ConsumerWidget {
               leading: const Icon(Icons.card_giftcard),
               title: const Text('我的愿望单'),
               onTap: () => context.push('/list?tab=wishlist'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.history),
+              title: const Text('浏览历史'),
+              onTap: () => context.push('/history'),
             ),
             ListTile(
               leading: const Icon(Icons.favorite),

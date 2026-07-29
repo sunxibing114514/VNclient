@@ -16,6 +16,25 @@ final vnDetailProvider =
   return ref.watch(vnEndpointProvider).getById(id);
 });
 
+/// Computes the Bayesian rating rank of a VN: the number of VNs with a
+/// higher rating plus one. Returns null when the VN has no rating.
+final vnRatingRankProvider =
+    FutureProvider.autoDispose.family<int?, String>((ref, vnId) async {
+  final vn = await ref.watch(vnDetailProvider(vnId).future);
+  if (vn.rating == null) return null;
+  // Count VNs with a strictly higher Bayesian rating.
+  // The API stores rating as an integer (10-100); ensure we send an int.
+  final ratingInt = vn.rating!.toInt();
+  final result = await ref.watch(vnEndpointProvider).query(
+        filters: ['rating', '>', ratingInt],
+        fields: 'id',
+        sort: 'id',
+        results: 1,
+        count: true,
+      );
+  return (result.count ?? 0) + 1;
+});
+
 /// Releases linked to a VN.
 final releasesByVnProvider =
     FutureProvider.autoDispose.family<List<Release>, String>((ref, vnId) async {

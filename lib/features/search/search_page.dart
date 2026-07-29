@@ -84,6 +84,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     _DropdownOption(label: 'macOS', value: 'mac'),
     _DropdownOption(label: 'Android', value: 'and'),
     _DropdownOption(label: 'iOS', value: 'ios'),
+    _DropdownOption(label: 'PC-98', value: 'p98'),
+    _DropdownOption(label: 'PC-88', value: 'p88'),
     _DropdownOption(label: 'PS2', value: 'ps2'),
     _DropdownOption(label: 'PSP', value: 'psp'),
     _DropdownOption(label: 'PS Vita', value: 'psv'),
@@ -387,11 +389,12 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                       ),
                     ],
                   ),
-                  if (_showAdvanced) _buildAdvancedFilters(),
                 ],
               ],
             ),
           ),
+          if (_showAdvanced && _target == SearchTarget.vn)
+            Flexible(child: _buildAdvancedFilters()),
           Expanded(child: _buildList()),
         ],
       ),
@@ -440,7 +443,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   Widget _buildAdvancedFilters() {
     return Card(
-      child: Padding(
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

@@ -275,43 +275,39 @@ class _CharacterListPageState extends ConsumerState<CharacterListPage> {
         children: [
           Padding(
             padding: const EdgeInsets.all(12),
-            child: Column(
-              children: [
-                TextField(
-                  controller: _controller,
-                  decoration: InputDecoration(
-                    hintText: '搜索角色…',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: Icon(_showAdvanced
-                              ? Icons.expand_less
-                              : Icons.filter_list),
-                          tooltip: '高级筛选',
-                          onPressed: () => setState(
-                              () => _showAdvanced = !_showAdvanced),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.search),
-                          onPressed: () {
-                            _term = _controller.text.trim();
-                            _fetch(reset: true);
-                          },
-                        ),
-                      ],
+            child: TextField(
+              controller: _controller,
+              decoration: InputDecoration(
+                hintText: '搜索角色…',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: Icon(_showAdvanced
+                          ? Icons.expand_less
+                          : Icons.filter_list),
+                      tooltip: '高级筛选',
+                      onPressed: () => setState(
+                          () => _showAdvanced = !_showAdvanced),
                     ),
-                  ),
-                  onSubmitted: (_) {
-                    _term = _controller.text.trim();
-                    _fetch(reset: true);
-                  },
+                    IconButton(
+                      icon: const Icon(Icons.search),
+                      onPressed: () {
+                        _term = _controller.text.trim();
+                        _fetch(reset: true);
+                      },
+                    ),
+                  ],
                 ),
-                if (_showAdvanced) _buildAdvancedFilters(),
-              ],
+              ),
+              onSubmitted: (_) {
+                _term = _controller.text.trim();
+                _fetch(reset: true);
+              },
             ),
           ),
+          if (_showAdvanced) Flexible(child: _buildAdvancedFilters()),
           Expanded(child: _buildBody()),
         ],
       ),
@@ -320,7 +316,8 @@ class _CharacterListPageState extends ConsumerState<CharacterListPage> {
 
   Widget _buildAdvancedFilters() {
     return Card(
-      child: Padding(
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

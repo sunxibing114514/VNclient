@@ -53,9 +53,12 @@ final homeDataProvider = FutureProvider.autoDispose<HomeData>((ref) async {
 });
 
 /// Recommendations based on the tags of the user's wishlist & finished VNs.
-/// Aggregates the top tags from those list entries and queries for VNs
-/// sharing those tags, then **shuffles** the pool so every refresh returns a
-/// different random subset — excluding entries the user already has.
+///
+/// Aggregates the most-frequent tags from those list entries (counting how
+/// many VNs each tag appears on, rather than summing tag ratings), then
+/// queries for VNs sharing those tags. The top tags are randomly selected
+/// and the result pool is shuffled so every refresh returns a different
+/// random subset — excluding entries the user already has.
 final recommendationsProvider =
     FutureProvider.autoDispose<List<Vn>>((ref) async {
   // Watch the seed so bumping it triggers a fresh shuffle.
@@ -70,9 +73,10 @@ final recommendationsProvider =
   final listEndpoint = ref.watch(listEndpointProvider);
   final vnEndpoint = ref.watch(vnEndpointProvider);
 
-  // Collect VN ids and tag ids from wishlist (5) and finished (2) labels.
+  // Collect VN ids and tag counts from wishlist (5) and finished (2) labels.
   final ownedVnIds = <String>{};
-  final tagScores = <String, num>{};
+  // tag id -> count of how many user-listed VNs carry this tag.
+  final tagCounts = <String, int>{};
 
   for (final labelId in [
     AppConstants.labelWishlist,
@@ -88,8 +92,12 @@ final recommendationsProvider =
         final vn = entry.vn;
         if (vn == null) continue;
         ownedVnIds.add(vn.id);
+        // Count each tag once per VN (frequency, not rating sum).
+        final seenTags = <String>{};
         for (final tag in vn.tags) {
-          tagScores[tag.id] = (tagScores[tag.id] ?? 0) + tag.rating;
+          if (seenTags.add(tag.id)) {
+            tagCounts[tag.id] = (tagCounts[tag.id] ?? 0) + 1;
+          }
         }
       }
     } catch (_) {
@@ -97,18 +105,21 @@ final recommendationsProvider =
     }
   }
 
-  if (tagScores.isEmpty) return const [];
+  if (tagCounts.isEmpty) return const [];
 
-  // Pick the top tag ids by aggregate score, then shuffle the tag order so
-  // different tags take priority on each refresh.
-  final sortedTags = tagScores.entries.toList()
+  // Pick the most-frequent tags, then randomly select a subset so each
+  // refresh surfaces different tags.
+  final sortedTags = tagCounts.entries.toList()
     ..sort((a, b) => b.value.compareTo(a.value));
-  final topTags = sortedTags.take(8).map((e) => e.key).toList();
+  // Take the top 12 most-frequent tags, then randomly pick 4-8 of them.
+  final topTags = sortedTags.take(12).map((e) => e.key).toList();
   topTags.shuffle(rng);
+  final pickCount = 4 + rng.nextInt(5); // 4..8
+  final selectedTags = topTags.take(pickCount.clamp(1, topTags.length)).toList();
 
   // Fetch a larger pool (100) so we have enough material to randomise.
   try {
-    final result = await vnEndpoint.byTags(topTags, results: 100);
+    final result = await vnEndpoint.byTags(selectedTags, results: 100);
     final pool = result.results.where((vn) => !ownedVnIds.contains(vn.id)).toList();
     // Completely shuffle the pool and pick 10.
     pool.shuffle(rng);
