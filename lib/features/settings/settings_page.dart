@@ -268,6 +268,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   value: const Locale('en'),
                   child: Text(l10n.tr('english')),
                 ),
+                DropdownMenuItem(
+                  value: const Locale('ja'),
+                  child: Text(l10n.tr('japanese')),
+                ),
               ],
               onChanged: (l) {
                 if (l != null) {

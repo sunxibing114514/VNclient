@@ -1,7 +1,7 @@
 name: vndb_app
 description: A Flutter client for VNDB (Visual Novel Database) replicating the website functionality.
 publish_to: 'none'
-version: 1.3.4+9
+version: 1.3.5+10
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

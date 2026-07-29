@@ -53,6 +53,21 @@ class ListEndpoint extends BaseEndpoint<UlistEntry> {
     );
   }
 
+  /// 查询某 VN 在当前用户列表中的记录 (无则返回空 results)。
+  Future<QueryResult<UlistEntry>> getEntry(
+    String userId,
+    String vnId,
+  ) {
+    return query(
+      filters: ['and', ['id', '=', vnId]],
+      fields: listFields,
+      sort: 'vote',
+      results: 1,
+      page: 1,
+      user: userId,
+    );
+  }
+
   /// Fetches the user's list labels.
   Future<List<UlistLabelDef>> getLabels(String? userId) async {
     final params = <String, dynamic>{

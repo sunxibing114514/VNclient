@@ -32,4 +32,5 @@ final localeNotifierProvider =
 const supportedLocales = <Locale>[
   Locale('zh'),
   Locale('en'),
+  Locale('ja'),
 ];

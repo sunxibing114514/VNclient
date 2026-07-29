@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/api/endpoints/character_endpoint.dart';
 import '../../core/api/endpoints/vn_endpoint.dart';
+import '../../core/l10n/app_localizations.dart';
 import '../../core/models/vn.dart';
 import '../../core/providers/endpoints_provider.dart';
 import '../../widgets/vn_card.dart';
 
-/// The database entry type to search against.
+/// 搜索目标类型。每种目标有独立的字段筛选与排序选项。
 enum SearchTarget {
   vn('VN 作品', '/vn', Icons.book),
   character('角色', '/character', Icons.person),
@@ -24,9 +26,7 @@ enum SearchTarget {
   final IconData icon;
 }
 
-/// Search page with a selectable search target (VN / character / producer /
-/// staff / release / tag / trait), free-text search, advanced VN filter
-/// builder and compact filter-string paste support.
+/// 搜索页：可切换搜索目标，VN 与角色目标各自带完整高级筛选面板。
 class SearchPage extends ConsumerStatefulWidget {
   const SearchPage({super.key, this.initialTarget});
 
@@ -37,8 +37,7 @@ class SearchPage extends ConsumerStatefulWidget {
 }
 
 class _SearchPageState extends ConsumerState<SearchPage> {
-  late SearchTarget _target =
-      widget.initialTarget ?? SearchTarget.vn;
+  late SearchTarget _target = widget.initialTarget ?? SearchTarget.vn;
   final _termController = TextEditingController();
   final _compactController = TextEditingController();
   final _scrollController = ScrollController();
@@ -51,7 +50,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   Object? _activeFilters;
   bool _showAdvanced = false;
 
-  // Advanced filter state (VN only)
+  // ---- VN 高级筛选状态 ----
   String? _language;
   String? _platform;
   String? _releasedFrom;
@@ -62,6 +61,28 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   final _devController = TextEditingController();
   final _releasedFromController = TextEditingController();
   final _releasedToController = TextEditingController();
+
+  // ---- 角色高级筛选状态 ----
+  String? _charRole; // main / primary / side / appears
+  String? _charBlood; // a / b / ab / o
+  String? _charSex; // m / f / b / n
+  String? _charGender; // m / f / o / a
+  String? _charCup; // AAA, AA, A-Z
+  int? _charHeightMin;
+  int? _charHeightMax;
+  int? _charWeightMin;
+  int? _charWeightMax;
+  int? _charBustMin;
+  int? _charWaistMin;
+  int? _charHipsMin;
+  int? _charAgeMin;
+  int? _charAgeMax;
+  int? _charBirthdayMonth; // 1-12
+  int _charTraitSpoiler = 0;
+  String _charSort = 'searchrank';
+  final _traitController = TextEditingController(); // 如 i1
+  final _seiyuuController = TextEditingController(); // 如 s81
+  final _vnController = TextEditingController(); // 如 v17
 
   static const _languages = <_DropdownOption>[
     _DropdownOption(label: '全部', value: null),
@@ -104,11 +125,65 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   static const _sorts = <_SortOption>[
     _SortOption(label: '搜索相关度', value: 'searchrank'),
-    _SortOption(label: '评分', value: 'rating'),
+    _SortOption(label: '贝叶斯评分', value: 'rating'),
     _SortOption(label: '投票数', value: 'votecount'),
     _SortOption(label: '发行日期', value: 'released'),
     _SortOption(label: '标题', value: 'title'),
     _SortOption(label: 'ID', value: 'id'),
+  ];
+
+  // 角色排序选项 (api 仅支持 id / name / searchrank)。
+  static const _charSorts = <_SortOption>[
+    _SortOption(label: '搜索相关度', value: 'searchrank'),
+    _SortOption(label: '名字', value: 'name'),
+    _SortOption(label: 'ID', value: 'id'),
+  ];
+
+  static const _charRoles = <_DropdownOption>[
+    _DropdownOption(label: '全部', value: null),
+    _DropdownOption(label: '主角', value: 'main'),
+    _DropdownOption(label: '主要', value: 'primary'),
+    _DropdownOption(label: '次要', value: 'side'),
+    _DropdownOption(label: '客串', value: 'appears'),
+  ];
+
+  static const _charBloods = <_DropdownOption>[
+    _DropdownOption(label: '全部', value: null),
+    _DropdownOption(label: 'A', value: 'a'),
+    _DropdownOption(label: 'B', value: 'b'),
+    _DropdownOption(label: 'AB', value: 'ab'),
+    _DropdownOption(label: 'O', value: 'o'),
+  ];
+
+  static const _charSexes = <_DropdownOption>[
+    _DropdownOption(label: '全部', value: null),
+    _DropdownOption(label: '男', value: 'm'),
+    _DropdownOption(label: '女', value: 'f'),
+    _DropdownOption(label: '双性', value: 'b'),
+    _DropdownOption(label: '无性', value: 'n'),
+  ];
+
+  static const _charGenders = <_DropdownOption>[
+    _DropdownOption(label: '全部', value: null),
+    _DropdownOption(label: '男', value: 'm'),
+    _DropdownOption(label: '女', value: 'f'),
+    _DropdownOption(label: '非二元', value: 'o'),
+    _DropdownOption(label: '模糊', value: 'a'),
+  ];
+
+  static final _charCups = <_DropdownOption>[
+    const _DropdownOption(label: '全部', value: null),
+    const _DropdownOption(label: 'AAA', value: 'AAA'),
+    const _DropdownOption(label: 'AA', value: 'AA'),
+    for (var c = 'A'.codeUnitAt(0); c <= 'Z'.codeUnitAt(0); c++)
+      _DropdownOption(
+          label: String.fromCharCode(c), value: String.fromCharCode(c)),
+  ];
+
+  static final _charBirthdayMonths = <_DropdownOption>[
+    const _DropdownOption(label: '全部', value: null),
+    for (var m = 1; m <= 12; m++)
+      _DropdownOption(label: '$m 月', value: m),
   ];
 
   @override
@@ -126,6 +201,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     _devController.dispose();
     _releasedFromController.dispose();
     _releasedToController.dispose();
+    _traitController.dispose();
+    _seiyuuController.dispose();
+    _vnController.dispose();
     super.dispose();
   }
 
@@ -138,7 +216,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
   }
 
-  /// Switch the active search target, clearing any in-flight results.
+  /// 切换搜索目标并清空当前结果。
   void _switchTarget(SearchTarget target) {
     if (target == _target) return;
     setState(() {
@@ -152,8 +230,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     });
   }
 
-  /// Build the active filters object based on the current filter state (VN).
-  Object? _buildFilters() {
+  /// 构建 VN 的高级筛选 filter 树。
+  Object? _buildVnFilters() {
     if (_compactController.text.trim().isNotEmpty) {
       return _compactController.text.trim();
     }
@@ -190,7 +268,48 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     return ['and', ...parts];
   }
 
-  bool get _hasAdvancedFilters =>
+  /// 构建角色的高级筛选 filter 树。
+  Object? _buildCharacterFilters() {
+    final parts = <List<dynamic>>[];
+    final term = _termController.text.trim();
+    if (term.isNotEmpty) {
+      parts.add(['search', '=', term]);
+    }
+    if (_charRole != null) parts.add(['role', '=', _charRole!]);
+    if (_charBlood != null) parts.add(['blood_type', '=', _charBlood!]);
+    if (_charSex != null) parts.add(['sex', '=', _charSex!]);
+    if (_charGender != null) parts.add(['gender', '=', _charGender!]);
+    if (_charCup != null) parts.add(['cup', '=', _charCup!]);
+    if (_charHeightMin != null) parts.add(['height', '>=', _charHeightMin!]);
+    if (_charHeightMax != null) parts.add(['height', '<=', _charHeightMax!]);
+    if (_charWeightMin != null) parts.add(['weight', '>=', _charWeightMin!]);
+    if (_charWeightMax != null) parts.add(['weight', '<=', _charWeightMax!]);
+    if (_charBustMin != null) parts.add(['bust', '>=', _charBustMin!]);
+    if (_charWaistMin != null) parts.add(['waist', '>=', _charWaistMin!]);
+    if (_charHipsMin != null) parts.add(['hips', '>=', _charHipsMin!]);
+    if (_charAgeMin != null) parts.add(['age', '>=', _charAgeMin!]);
+    if (_charAgeMax != null) parts.add(['age', '<=', _charAgeMax!]);
+    if (_charBirthdayMonth != null) {
+      parts.add(['birthday', '=', [_charBirthdayMonth, 0]]);
+    }
+    final traitId = _traitController.text.trim();
+    if (traitId.isNotEmpty) {
+      parts.add(['trait', '=', [traitId, _charTraitSpoiler]]);
+    }
+    final seiyuuId = _seiyuuController.text.trim();
+    if (seiyuuId.isNotEmpty) {
+      parts.add(['seiyuu', '=', ['id', '=', seiyuuId]]);
+    }
+    final vnId = _vnController.text.trim();
+    if (vnId.isNotEmpty) {
+      parts.add(['vn', '=', ['id', '=', vnId]]);
+    }
+    if (parts.isEmpty) return null;
+    if (parts.length == 1) return parts.first;
+    return ['and', ...parts];
+  }
+
+  bool get _hasVnAdvancedFilters =>
       _language != null ||
       _platform != null ||
       (_releasedFrom != null && _releasedFrom!.isNotEmpty) ||
@@ -199,18 +318,43 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       _tagController.text.trim().isNotEmpty ||
       _devController.text.trim().isNotEmpty;
 
+  bool get _hasCharAdvancedFilters =>
+      _charRole != null ||
+      _charBlood != null ||
+      _charSex != null ||
+      _charGender != null ||
+      _charCup != null ||
+      _charHeightMin != null ||
+      _charHeightMax != null ||
+      _charWeightMin != null ||
+      _charWeightMax != null ||
+      _charBustMin != null ||
+      _charWaistMin != null ||
+      _charHipsMin != null ||
+      _charAgeMin != null ||
+      _charAgeMax != null ||
+      _charBirthdayMonth != null ||
+      _traitController.text.trim().isNotEmpty ||
+      _seiyuuController.text.trim().isNotEmpty ||
+      _vnController.text.trim().isNotEmpty;
+
   Future<void> _runSearch() async {
     setState(() {
       _items.clear();
       _page = 1;
       _hasMore = true;
       _error = null;
-      if (_target == SearchTarget.vn) {
-        _activeFilters = _buildFilters();
-      } else {
-        // For non-VN targets, the search term is the filter.
-        final term = _termController.text.trim();
-        _activeFilters = term.isEmpty ? null : ['search', '=', term];
+      switch (_target) {
+        case SearchTarget.vn:
+          _activeFilters = _buildVnFilters();
+          break;
+        case SearchTarget.character:
+          _activeFilters = _buildCharacterFilters();
+          break;
+        default:
+          // 其它目标只把搜索词作为 filter。
+          final term = _termController.text.trim();
+          _activeFilters = term.isEmpty ? null : ['search', '=', term];
       }
     });
     await _fetch();
@@ -229,9 +373,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     try {
       final hasCompact = _target == SearchTarget.vn &&
           _compactController.text.trim().isNotEmpty;
-      final dynamic result = await _runQuery(
-        compactFilters: hasCompact,
-      );
+      final dynamic result = await _runQuery(compactFilters: hasCompact);
       setState(() {
         _items.addAll(result.results as List);
         _hasMore = result.more as bool;
@@ -266,9 +408,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       case SearchTarget.character:
         return ref.read(characterEndpointProvider).query(
               filters: filters,
-              fields:
-                  'name, original, image{id,url,dims,sexual,violence}, vns{role,id,title}',
-              sort: 'searchrank',
+              fields: CharacterEndpoint.listFields,
+              sort: _charSort,
               results: 20,
               page: _page,
             );
@@ -281,7 +422,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
               page: _page,
             );
       case SearchTarget.staff:
-        // Always include ismain=1 to deduplicate aliases.
+        // 始终带 ismain=1 去重别名。
         final f = filters == null
             ? ['ismain', '=', 1]
             : (filters is List && filters.isNotEmpty && filters.first == 'and'
@@ -323,7 +464,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
   }
 
-  void _resetFilters() {
+  void _resetVnFilters() {
     setState(() {
       _language = null;
       _platform = null;
@@ -337,13 +478,41 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     });
   }
 
+  void _resetCharFilters() {
+    setState(() {
+      _charRole = null;
+      _charBlood = null;
+      _charSex = null;
+      _charGender = null;
+      _charCup = null;
+      _charHeightMin = null;
+      _charHeightMax = null;
+      _charWeightMin = null;
+      _charWeightMax = null;
+      _charBustMin = null;
+      _charWaistMin = null;
+      _charHipsMin = null;
+      _charAgeMin = null;
+      _charAgeMax = null;
+      _charBirthdayMonth = null;
+      _charTraitSpoiler = 0;
+      _traitController.clear();
+      _seiyuuController.clear();
+      _vnController.clear();
+    });
+  }
+
+  bool _targetHasAdvanced() =>
+      _target == SearchTarget.vn || _target == SearchTarget.character;
+
   @override
   Widget build(BuildContext context) {
+    final l10n = ref.watch(l10nProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('搜索')),
+      appBar: AppBar(title: Text(l10n.tr('search'))),
       body: Column(
         children: [
-          // Target selector
+          // 目标选择器
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
             child: _buildTargetSelector(),
@@ -390,11 +559,27 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                     ],
                   ),
                 ],
+                if (_target == SearchTarget.character) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      icon: Icon(_showAdvanced
+                          ? Icons.expand_less
+                          : Icons.expand_more),
+                      tooltip: '高级筛选',
+                      onPressed: () => setState(
+                          () => _showAdvanced = !_showAdvanced),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
           if (_showAdvanced && _target == SearchTarget.vn)
-            Flexible(child: _buildAdvancedFilters()),
+            Flexible(child: _buildVnAdvancedFilters()),
+          if (_showAdvanced && _target == SearchTarget.character)
+            Flexible(child: _buildCharacterAdvancedFilters()),
           Expanded(child: _buildList()),
         ],
       ),
@@ -441,7 +626,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     );
   }
 
-  Widget _buildAdvancedFilters() {
+  Widget _buildVnAdvancedFilters() {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12),
       child: SingleChildScrollView(
@@ -457,7 +642,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                 TextButton.icon(
                   icon: const Icon(Icons.refresh, size: 16),
                   label: const Text('重置'),
-                  onPressed: _resetFilters,
+                  onPressed: _resetVnFilters,
                 ),
               ],
             ),
@@ -526,7 +711,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
               ],
             ),
             const SizedBox(height: 8),
-            Text('最低评分: ${(_minRating * 10).round()}'),
+            Text('最低贝叶斯评分: ${(_minRating * 10).round()}'),
             Slider(
               value: _minRating,
               min: 0,
@@ -588,6 +773,241 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     );
   }
 
+  Widget _buildCharacterAdvancedFilters() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text('角色高级筛选',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const Spacer(),
+                TextButton.icon(
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('重置'),
+                  onPressed: _resetCharFilters,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _charDropdown('角色类型', _charRole, _charRoles,
+                (v) => setState(() => _charRole = v)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _charDropdown('血型', _charBlood, _charBloods,
+                      (v) => setState(() => _charBlood = v)),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _charDropdown('生理性别', _charSex, _charSexes,
+                      (v) => setState(() => _charSex = v)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _charDropdown('性别认同', _charGender, _charGenders,
+                      (v) => setState(() => _charGender = v)),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _charDropdown('罩杯', _charCup, _charCups,
+                      (v) => setState(() => _charCup = v)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _charDropdown('生日月份', _charBirthdayMonth, _charBirthdayMonths,
+                (v) => setState(() => _charBirthdayMonth = v)),
+            const SizedBox(height: 8),
+            _rangeRow(
+              '身高 (cm)',
+              _charHeightMin,
+              _charHeightMax,
+              (v) => setState(() => _charHeightMin = v),
+              (v) => setState(() => _charHeightMax = v),
+            ),
+            const SizedBox(height: 8),
+            _rangeRow(
+              '体重 (kg)',
+              _charWeightMin,
+              _charWeightMax,
+              (v) => setState(() => _charWeightMin = v),
+              (v) => setState(() => _charWeightMax = v),
+            ),
+            const SizedBox(height: 8),
+            _rangeRow(
+              '年龄',
+              _charAgeMin,
+              _charAgeMax,
+              (v) => setState(() => _charAgeMin = v),
+              (v) => setState(() => _charAgeMax = v),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _numField('胸围 ≥', _charBustMin,
+                      (v) => setState(() => _charBustMin = v)),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _numField('腰围 ≥', _charWaistMin,
+                      (v) => setState(() => _charWaistMin = v)),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _numField('臀围 ≥', _charHipsMin,
+                      (v) => setState(() => _charHipsMin = v)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _traitController,
+              decoration: const InputDecoration(
+                labelText: '特质 ID (如 i1)',
+                isDense: true,
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.category),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Text('特质剧透级别: '),
+                Expanded(
+                  child: Slider(
+                    value: _charTraitSpoiler.toDouble(),
+                    min: 0,
+                    max: 2,
+                    divisions: 2,
+                    label: ['无', '轻度', '重度'][_charTraitSpoiler],
+                    onChanged: (v) =>
+                        setState(() => _charTraitSpoiler = v.round()),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _seiyuuController,
+              decoration: const InputDecoration(
+                labelText: '配音演员 ID (如 s81)',
+                isDense: true,
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.mic),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _vnController,
+              decoration: const InputDecoration(
+                labelText: '关联 VN ID (如 v17)',
+                isDense: true,
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.book),
+              ),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _charSort,
+              decoration: const InputDecoration(
+                labelText: '排序',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+              items: _charSorts
+                  .map((e) => DropdownMenuItem<String>(
+                        value: e.value,
+                        child: Text(e.label),
+                      ))
+                  .toList(),
+              onChanged: (v) {
+                if (v != null) setState(() => _charSort = v);
+              },
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.search),
+                label: const Text('搜索'),
+                onPressed: _runSearch,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _charDropdown(
+    String label,
+    dynamic value,
+    List<_DropdownOption> options,
+    ValueChanged<dynamic> onChanged,
+  ) {
+    return DropdownButtonFormField<dynamic>(
+      value: value,
+      decoration: InputDecoration(
+        labelText: label,
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      items: options
+          .map((e) => DropdownMenuItem<dynamic>(
+                value: e.value,
+                child: Text(e.label),
+              ))
+          .toList(),
+      onChanged: onChanged,
+    );
+  }
+
+  Widget _numField(String label, int? value, ValueChanged<int?> onChanged) {
+    return TextField(
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(
+        labelText: label,
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      onChanged: (v) {
+        final n = int.tryParse(v.trim());
+        onChanged(v.trim().isEmpty ? null : n);
+      },
+    );
+  }
+
+  Widget _rangeRow(
+    String label,
+    int? min,
+    int? max,
+    ValueChanged<int?> onMin,
+    ValueChanged<int?> onMax,
+  ) {
+    return Row(
+      children: [
+        Expanded(
+          child: _numField('$label ≥', min, onMin),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _numField('$label ≤', max, onMax),
+        ),
+      ],
+    );
+  }
+
   Widget _buildList() {
     if (_items.isEmpty && !_loading && _error == null) {
       return Center(
@@ -598,7 +1018,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             const SizedBox(height: 12),
             Text('输入关键词开始搜索',
                 style: Theme.of(context).textTheme.bodyMedium),
-            if (_hasAdvancedFilters) ...[
+            if (_targetHasAdvanced() &&
+                ((_target == SearchTarget.vn && _hasVnAdvancedFilters) ||
+                    (_target == SearchTarget.character &&
+                        _hasCharAdvancedFilters))) ...[
               const SizedBox(height: 8),
               Text('已有高级筛选条件',
                   style: Theme.of(context).textTheme.bodySmall),
@@ -810,7 +1233,7 @@ class _GenericResultTile extends StatelessWidget {
 class _DropdownOption {
   const _DropdownOption({required this.label, required this.value});
   final String label;
-  final String? value;
+  final dynamic value;
 }
 
 class _SortOption {

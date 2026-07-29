@@ -6,8 +6,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localizations.dart';
+import '../../core/models/character.dart';
 import '../../core/models/vn.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/detail_providers.dart';
 import '../../core/router/app_router.dart';
 import '../../core/services/follow_service.dart';
 import '../../widgets/async_value_widget.dart';
@@ -135,6 +137,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             const _StatsCard(),
             const _RecentChangesSection(),
             const _RecommendationsSection(),
+            const _TodayBirthdaysSection(),
             const _ReleasesSection(),
             const _SiteLinksSection(),
             if (auth.isAuthenticated) ...[
@@ -494,6 +497,108 @@ class _RecommendationsSection extends ConsumerWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// 今日生日的角色区块，横向展示头像与名字。
+class _TodayBirthdaysSection extends ConsumerWidget {
+  const _TodayBirthdaysSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = ref.watch(l10nProvider);
+    final async = ref.watch(todayBirthdaysProvider);
+    return AsyncValueWidget(
+      value: async,
+      data: (list) {
+        if (list.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SectionHeader(
+              title: l10n.tr('todayBirthdays'),
+              icon: Icons.cake,
+            ),
+            SizedBox(
+              height: 160,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                itemCount: list.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, i) =>
+                    _BirthdayCard(character: list[i]),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 单个今日生日角色卡片：圆形头像 + 名字 + 原名。
+class _BirthdayCard extends StatelessWidget {
+  const _BirthdayCard({required this.character});
+  final Character character;
+
+  @override
+  Widget build(BuildContext context) {
+    final img = character.image?.url;
+    return SizedBox(
+      width: 110,
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => context.push('/character/${character.id}'),
+          child: Column(
+            children: [
+              SizedBox(
+                height: 110,
+                width: double.infinity,
+                child: img != null
+                    ? CachedNetworkImage(
+                        imageUrl: img,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(
+                          color: Theme.of(context).colorScheme.surface,
+                        ),
+                        errorWidget: (_, __, ___) => Container(
+                          color: Theme.of(context).colorScheme.surface,
+                          child: const Icon(Icons.person, size: 32),
+                        ),
+                      )
+                    : Container(
+                        color: Theme.of(context).colorScheme.surface,
+                        child: const Icon(Icons.person, size: 32),
+                      ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(4),
+                child: Column(
+                  children: [
+                    Text(
+                      character.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w600),
+                    ),
+                    if (character.original != null)
+                      Text(
+                        character.original!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

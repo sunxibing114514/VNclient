@@ -35,6 +35,32 @@ final vnRatingRankProvider =
   return (result.count ?? 0) + 1;
 });
 
+/// 当前用户在某 VN 上的列表记录，未登录或不在列表中返回 null。
+/// 用于"加入列表"对话框预填已有 vote / notes / labels。
+final userVnListEntryProvider =
+    FutureProvider.autoDispose.family<UlistEntry?, String>((ref, vnId) async {
+  final auth = ref.watch(authNotifierProvider);
+  final userId = auth.user?.id;
+  if (!auth.isAuthenticated || userId == null) return null;
+  try {
+    final result =
+        await ref.watch(listEndpointProvider).getEntry(userId, vnId);
+    return result.results.isEmpty ? null : result.results.first;
+  } catch (_) {
+    return null;
+  }
+});
+
+/// 今日生日的角色列表。
+final todayBirthdaysProvider =
+    FutureProvider.autoDispose<List<Character>>((ref) async {
+  final now = DateTime.now();
+  final result = await ref
+      .watch(characterEndpointProvider)
+      .byBirthday(now.month, now.day, results: 30);
+  return result.results;
+});
+
 /// Releases linked to a VN.
 final releasesByVnProvider =
     FutureProvider.autoDispose.family<List<Release>, String>((ref, vnId) async {

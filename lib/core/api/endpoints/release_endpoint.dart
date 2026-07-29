@@ -56,21 +56,22 @@ class ReleaseEndpoint extends BaseEndpoint<Release> {
     );
   }
 
-  /// Releases with a future (or TBA) release date — the "Upcoming" list.
-  Future<QueryResult<Release>> getUpcoming({int limit = 10}) {
+  /// 即将发布：今天之后，按 released 正序（最近未来优先）。
+  Future<QueryResult<Release>> getUpcoming({int limit = 5}) {
     return query(
-      filters: ['or', ['released', '>', 'today'], ['released', '=', 'TBA']],
+      filters: ['released', '>', 'today'],
       fields: listFields,
       sort: 'released',
+      reverse: false,
       results: limit,
       page: 1,
     );
   }
 
-  /// Releases with a past release date, sorted newest-first.
-  Future<QueryResult<Release>> getJustReleased({int limit = 10}) {
+  /// 刚刚发布：今天及之前，按 released 倒序（最新优先）。
+  Future<QueryResult<Release>> getJustReleased({int limit = 5}) {
     return query(
-      filters: ['released', '<', 'today'],
+      filters: ['released', '<=', 'today'],
       fields: listFields,
       sort: 'released',
       reverse: true,

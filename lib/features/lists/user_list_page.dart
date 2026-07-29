@@ -180,6 +180,73 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
   final _searchController = TextEditingController();
   Timer? _debounce;
 
+  // ---- 高级筛选状态 (与搜索界面保持一致) ----
+  bool _showAdvanced = false;
+  String? _language;
+  String? _platform;
+  String? _releasedFrom;
+  String? _releasedTo;
+  double _minRating = 0;
+  String _sort = 'vote';
+  bool _reverse = true;
+  final _tagController = TextEditingController();
+  final _devController = TextEditingController();
+  final _releasedFromController = TextEditingController();
+  final _releasedToController = TextEditingController();
+
+  static const _languages = <_DropdownOption>[
+    _DropdownOption(label: '全部', value: null),
+    _DropdownOption(label: '英语', value: 'en'),
+    _DropdownOption(label: '日语', value: 'ja'),
+    _DropdownOption(label: '中文', value: 'zh'),
+    _DropdownOption(label: '韩语', value: 'ko'),
+    _DropdownOption(label: '法语', value: 'fr'),
+    _DropdownOption(label: '德语', value: 'de'),
+    _DropdownOption(label: '西班牙语', value: 'es'),
+    _DropdownOption(label: '俄语', value: 'ru'),
+    _DropdownOption(label: '意大利语', value: 'it'),
+    _DropdownOption(label: '葡萄牙语', value: 'pt'),
+  ];
+
+  static const _platforms = <_DropdownOption>[
+    _DropdownOption(label: '全部', value: null),
+    _DropdownOption(label: 'Windows', value: 'win'),
+    _DropdownOption(label: 'Linux', value: 'lin'),
+    _DropdownOption(label: 'macOS', value: 'mac'),
+    _DropdownOption(label: 'Android', value: 'and'),
+    _DropdownOption(label: 'iOS', value: 'ios'),
+    _DropdownOption(label: 'PC-98', value: 'p98'),
+    _DropdownOption(label: 'PC-88', value: 'p88'),
+    _DropdownOption(label: 'PS2', value: 'ps2'),
+    _DropdownOption(label: 'PSP', value: 'psp'),
+    _DropdownOption(label: 'PS Vita', value: 'psv'),
+    _DropdownOption(label: 'PS3', value: 'ps3'),
+    _DropdownOption(label: 'PS4', value: 'ps4'),
+    _DropdownOption(label: 'Nintendo Switch', value: 'swi'),
+    _DropdownOption(label: 'Nintendo DS', value: 'nds'),
+    _DropdownOption(label: 'Nintendo 3DS', value: 'n3ds'),
+    _DropdownOption(label: 'Wii', value: 'wii'),
+    _DropdownOption(label: 'Wii U', value: 'wiu'),
+    _DropdownOption(label: 'Xbox 360', value: 'x360'),
+    _DropdownOption(label: 'Xbox One', value: 'xbo'),
+    _DropdownOption(label: 'Web', value: 'web'),
+    _DropdownOption(label: 'Other', value: 'oth'),
+  ];
+
+  /// ulist 排序选项：贝叶斯评分/投票数/发行日期/标题/ID/我的评分。
+  static const _sorts = <_SortOption>[
+    _SortOption(label: '我的评分', value: 'vote'),
+    _SortOption(label: '贝叶斯评分', value: 'rating'),
+    _SortOption(label: '投票数', value: 'votecount'),
+    _SortOption(label: '发行日期', value: 'released'),
+    _SortOption(label: '标题', value: 'title'),
+    _SortOption(label: 'ID', value: 'id'),
+    _SortOption(label: '添加时间', value: 'added'),
+    _SortOption(label: '修改时间', value: 'lastmod'),
+    _SortOption(label: '开始日期', value: 'started'),
+    _SortOption(label: '完成日期', value: 'finished'),
+  ];
+
   @override
   bool get wantKeepAlive => true;
 
@@ -193,6 +260,10 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
   void dispose() {
     _searchController.dispose();
     _debounce?.cancel();
+    _tagController.dispose();
+    _devController.dispose();
+    _releasedFromController.dispose();
+    _releasedToController.dispose();
     super.dispose();
   }
 
@@ -205,6 +276,43 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
       }
     });
   }
+
+  /// 构造高级筛选的 ulist 兼容 filter 树。
+  /// ulist 接受所有 VN 过滤器，但需使用 `['vn','=', [...]]` 包装，
+  /// 此处直接平铺到顶层 and 中，因为 VNDB ulist 文档允许使用所有 vn 过滤器。
+  Object? _buildExtraFilters() {
+    final parts = <List<dynamic>>[];
+    if (_searchTerm.isNotEmpty) {
+      parts.add(['search', '=', _searchTerm]);
+    }
+    if (_language != null) parts.add(['lang', '=', _language!]);
+    if (_platform != null) parts.add(['platform', '=', _platform!]);
+    if (_releasedFrom != null && _releasedFrom!.isNotEmpty) {
+      parts.add(['released', '>=', _releasedFrom!]);
+    }
+    if (_releasedTo != null && _releasedTo!.isNotEmpty) {
+      parts.add(['released', '<=', _releasedTo!]);
+    }
+    if (_minRating > 0) {
+      parts.add(['rating', '>=', (_minRating * 10).round()]);
+    }
+    final tagTerm = _tagController.text.trim();
+    if (tagTerm.isNotEmpty) parts.add(['tag', '=', tagTerm]);
+    final devTerm = _devController.text.trim();
+    if (devTerm.isNotEmpty) parts.add(['developer', '=', devTerm]);
+    if (parts.isEmpty) return null;
+    if (parts.length == 1) return parts.first;
+    return ['and', ...parts];
+  }
+
+  bool get _hasAdvancedFilters =>
+      _language != null ||
+      _platform != null ||
+      (_releasedFrom != null && _releasedFrom!.isNotEmpty) ||
+      (_releasedTo != null && _releasedTo!.isNotEmpty) ||
+      _minRating > 0 ||
+      _tagController.text.trim().isNotEmpty ||
+      _devController.text.trim().isNotEmpty;
 
   Future<void> _fetch({bool reset = false}) async {
     final auth = ref.read(authNotifierProvider);
@@ -221,14 +329,13 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
       _error = null;
     });
     try {
-      final extraFilters = _searchTerm.isNotEmpty
-          ? ['search', '=', _searchTerm]
-          : null;
       final result = await ref.read(listEndpointProvider).getList(
             userId,
             labelId: widget.labelId,
+            sort: _sort,
+            reverse: _reverse,
             page: _page,
-            extraFilters: extraFilters,
+            extraFilters: _buildExtraFilters(),
           );
       setState(() {
         _items.addAll(result.results);
@@ -253,6 +360,20 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
     await _fetch(reset: true);
   }
 
+  void _resetFilters() {
+    setState(() {
+      _language = null;
+      _platform = null;
+      _releasedFrom = null;
+      _releasedTo = null;
+      _minRating = 0;
+      _tagController.clear();
+      _devController.clear();
+      _releasedFromController.clear();
+      _releasedToController.clear();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -260,30 +381,46 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-          child: TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              prefixIcon: const Icon(Icons.search, size: 20),
-              suffixIcon: _searchController.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear, size: 20),
-                      onPressed: () {
-                        _searchController.clear();
-                        _searchTerm = '';
-                        _fetch(reset: true);
-                      },
-                    )
-                  : null,
-              hintText: '搜索列表中的作品',
-              isDense: true,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 20),
+                            onPressed: () {
+                              _searchController.clear();
+                              _searchTerm = '';
+                              _fetch(reset: true);
+                            },
+                          )
+                        : null,
+                    hintText: '搜索列表中的作品',
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  onChanged: _onSearchChanged,
+                ),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-            ),
-            onChanged: _onSearchChanged,
+              IconButton(
+                icon: Icon(_showAdvanced
+                    ? Icons.expand_less
+                    : Icons.filter_list),
+                tooltip: '高级筛选',
+                onPressed: () =>
+                    setState(() => _showAdvanced = !_showAdvanced),
+              ),
+            ],
           ),
         ),
+        if (_showAdvanced) Flexible(child: _buildAdvancedFilters()),
         Expanded(
           child: RefreshIndicator(
             onRefresh: _onRefresh,
@@ -291,6 +428,161 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
           ),
         ),
       ],
+    );
+  }
+
+  /// 高级筛选面板 (与搜索界面保持一致的结构)。
+  Widget _buildAdvancedFilters() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text('高级筛选',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const Spacer(),
+                TextButton.icon(
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('重置'),
+                  onPressed: _resetFilters,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String?>(
+              value: _language,
+              decoration: const InputDecoration(
+                labelText: '语言',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+              items: _languages
+                  .map((e) => DropdownMenuItem<String?>(
+                        value: e.value,
+                        child: Text(e.label),
+                      ))
+                  .toList(),
+              onChanged: (v) => setState(() => _language = v),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String?>(
+              value: _platform,
+              decoration: const InputDecoration(
+                labelText: '平台',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+              items: _platforms
+                  .map((e) => DropdownMenuItem<String?>(
+                        value: e.value,
+                        child: Text(e.label),
+                      ))
+                  .toList(),
+              onChanged: (v) => setState(() => _platform = v),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _releasedFromController,
+                    decoration: const InputDecoration(
+                      labelText: '发行起 (YYYY)',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (v) => _releasedFrom =
+                        v.trim().isEmpty ? null : v.trim(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _releasedToController,
+                    decoration: const InputDecoration(
+                      labelText: '发行止 (YYYY)',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (v) => _releasedTo =
+                        v.trim().isEmpty ? null : v.trim(),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text('最低贝叶斯评分: ${(_minRating * 10).round()}'),
+            Slider(
+              value: _minRating,
+              min: 0,
+              max: 10,
+              divisions: 9,
+              label: '${(_minRating * 10).round()}',
+              onChanged: (v) => setState(() => _minRating = v),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _tagController,
+              decoration: const InputDecoration(
+                labelText: '标签 ID (如 g1)',
+                isDense: true,
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.label),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _devController,
+              decoration: const InputDecoration(
+                labelText: '开发商 ID 或名称 (如 p1)',
+                isDense: true,
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.business),
+              ),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _sort,
+              decoration: const InputDecoration(
+                labelText: '排序',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+              items: _sorts
+                  .map((e) => DropdownMenuItem<String>(
+                        value: e.value,
+                        child: Text(e.label),
+                      ))
+                  .toList(),
+              onChanged: (v) {
+                if (v != null) setState(() => _sort = v);
+              },
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              dense: true,
+              title: const Text('倒序'),
+              value: _reverse,
+              onChanged: (v) => setState(() => _reverse = v),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.search),
+                label: const Text('应用筛选'),
+                onPressed: () => _fetch(reset: true),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -314,7 +606,10 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
     if (_items.isEmpty) {
       return ListView(children: [
         const SizedBox(height: 160),
-        Center(child: Text(_searchTerm.isNotEmpty ? '未找到匹配的作品' : '列表为空')),
+        Center(
+            child: Text(_searchTerm.isNotEmpty || _hasAdvancedFilters
+                ? '未找到匹配的作品'
+                : '列表为空')),
       ]);
     }
     return ListView.builder(
@@ -335,6 +630,18 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
       },
     );
   }
+}
+
+class _DropdownOption {
+  const _DropdownOption({required this.label, required this.value});
+  final String label;
+  final dynamic value;
+}
+
+class _SortOption {
+  const _SortOption({required this.label, required this.value});
+  final String label;
+  final String value;
 }
 
 class _ListEntryTile extends ConsumerWidget {

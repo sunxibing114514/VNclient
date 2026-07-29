@@ -82,4 +82,19 @@ class CharacterEndpoint extends BaseEndpoint<Character> {
       page: page,
     );
   }
+
+  /// 查询今天生日的角色，使用 VNDB birthday 过滤器 [month, day]。
+  Future<QueryResult<Character>> byBirthday(
+    int month,
+    int day, {
+    int results = 50,
+  }) {
+    return query(
+      filters: ['birthday', '=', [month, day]],
+      fields: listFields,
+      sort: 'name',
+      results: results,
+      page: 1,
+    );
+  }
 }
