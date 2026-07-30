@@ -1,41 +1,52 @@
-name: Build iOS (Unsigned IPA)
+name: Build IPA
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - 'assets/**'
+      - '.github/workflows/build-ipa.yml'
+  pull_request:
+    branches: [main, master]
 
 jobs:
-  build-ios:
-    name: Build iOS IPA
+  build-ipa:
+    name: Build iOS IPA (Unsigned)
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Fix pubspec.yaml (name)
+      - name: Normalize project name
+        # pubspec 里 name 是 vndb_app，但下方 flutter create 用 --project-name=vnclient，
+        # 两者必须一致，否则 Flutter 会报 "Project name mismatch"。这里统一改成 vnclient。
+        # 注意：不要降级 intl。代码用到了 Color.withValues / toARGB32 / CardThemeData 等
+        # Flutter 3.27+ API，flutter_localizations 3.27+ 也要求 intl 0.20.x，保留原版本。
         run: |
-          # 仓库里 name 实际是 vndb_app，原 sed 's/^name: VNclient/' 匹配不到，
-          # 改成 .* 才能统一成 vnclient 以匹配 --project-name=vnclient。
-          # 注意：不要再降级 intl！代码用了 Color.withValues / toARGB32 / CardThemeData
-          # 等 Flutter 3.27+ API，flutter_localizations 3.27+ 也要求 intl 0.20.x，
-          # 所以 pubspec 原本的 intl: ^0.20.2 是对的，保留即可。
           sed -i '' 's/^name: .*/name: vnclient/' pubspec.yaml
-          echo "=== 修改后的 pubspec.yaml 关键字段 ==="
+          echo "=== pubspec.yaml 关键字段 ==="
           grep -E "^(name|intl):" pubspec.yaml
 
-      - name: Setup Flutter
+      - name: Setup Flutter (stable)
+        # 不固定版本：使用最新 stable。
+        # 原因 1：代码使用 Color.withValues / toARGB32 / CardThemeData 等 3.27+ API，
+        #         旧版 3.24.0 编译不过（kernel_snapshot 失败）。
+        # 原因 2：macos-latest 现在是 Xcode 26.x，Flutter 3.24 的 xcresulttool 解析
+        #         在新 Xcode 上已废弃（需 --legacy），会吞掉真实错误。
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          # 不固定版本：使用最新 stable。
-          # 原因 1：代码使用 Color.withValues / toARGB32 / CardThemeData 等 3.27+ API，
-          #         旧版 3.24.0 编译不过（kernel_snapshot 失败）。
-          # 原因 2：macos-latest 现在是 Xcode 26.x，Flutter 3.24 的 xcresulttool 解析
-          #         在新 Xcode 上已废弃（需 --legacy），导致真实错误被吞掉，
-          #         只能回退报 "Development Team required" 这种误导信息。3.27+ 已修复。
           cache: true
+
+      - name: Flutter doctor
+        run: flutter doctor -v
 
       - name: Install dependencies
         run: flutter pub get
@@ -43,18 +54,18 @@ jobs:
       - name: Generate iOS platform files
         run: |
           flutter create --platforms=ios --org=com.hjy --project-name=vnclient .
+          # flutter create 可能把 name 改回去，再统一一次
           sed -i '' 's/^name: .*/name: vnclient/' pubspec.yaml
 
       - name: Generate iOS app icon
+        # 仅生成 iOS 图标，Android 维持仓库现有 ic_launcher。
+        # 需要先在仓库放一张 assets/appicon.png（推荐 1024×1024）。
         run: |
-          # 仅生成 iOS 图标，Android 维持仓库现有 ic_launcher。
-          # 需要先在仓库放一张 assets/appicon.png（推荐 1024×1024，512 也可，会放大）。
           if [ ! -f assets/appicon.png ]; then
             echo "assets/appicon.png 不存在，跳过图标生成（使用默认图标）"
             exit 0
           fi
 
-          # flutter_launcher_icons 配置（top-level key，单独文件）
           cat > flutter_launcher_icons.yaml <<'EOF'
           flutter_launcher_icons:
             android: false
@@ -63,25 +74,18 @@ jobs:
             remove_alpha_ios: true
           EOF
 
-          # 用 flutter pub add 自动解析兼容版本，避免手写版本号冲突
           flutter pub add --dev flutter_launcher_icons
           dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
           echo "=== iOS 图标生成完成 ==="
           ls -la ios/Runner/Assets.xcassets/AppIcon.appiconset/ | head -20
 
-      - name: Set Bundle ID
+      - name: Configure Xcode project (bundle id, signing, deployment target)
         run: |
+          # Flutter 3.44 要求最低 iOS 13，统一部署目标到 13.0。
           sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = com.hjy.vnclient;/g' ios/Runner.xcodeproj/project.pbxproj
-
-      - name: Set iOS deployment target & disable code signing
-        run: |
-          # Flutter 3.44 要求最低 iOS 13（官方 supported-platforms：iOS 13-26，12 及更早不支持）。
-          # 把 Podfile/pbxproj 的部署目标统一到 13.0，避免 "required a higher minimum
-          # deployment target" 错误。flutter create 默认已是 13.0，这里显式写一遍保险。
           sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 13.0/g' ios/Runner.xcodeproj/project.pbxproj
 
-          # 保留 CODE_SIGN_STYLE = Manual：Manual + 空 team + CODE_SIGNING_ALLOWED=NO
-          # 时 Xcode 不会尝试自动签名解析，xcodebuild 能正常跑完。
+          # Manual + 空 team + CODE_SIGNING_ALLOWED=NO，xcodebuild 不会尝试自动签名解析。
           sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGN_IDENTITY = "Apple Development"/CODE_SIGN_IDENTITY = ""/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer"/CODE_SIGN_IDENTITY = ""/g' ios/Runner.xcodeproj/project.pbxproj
@@ -95,35 +99,27 @@ jobs:
         run: |
           cd ios
           if [ ! -f Podfile ]; then
-            echo "platform :ios, '13.0'" > Podfile
-            echo "target 'Runner' do" >> Podfile
-            echo "  use_frameworks!" >> Podfile
-            echo "  use_modular_headers!" >> Podfile
-            echo "  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))" >> Podfile
-            echo "end" >> Podfile
-            echo "post_install do |installer|" >> Podfile
-            echo "  installer.pods_project.targets.each do |target|" >> Podfile
-            echo "    flutter_additional_ios_build_settings(target)" >> Podfile
-            echo "    target.build_configurations.each do |config|" >> Podfile
-            echo "      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'" >> Podfile
-            echo "      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'" >> Podfile
-            # 统一 pod 部署目标到 13.0（Flutter 3.44 要求），消除 9.0/12.0 警告
-            echo "      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'" >> Podfile
-            echo "    end" >> Podfile
-            echo "  end" >> Podfile
-            echo "end" >> Podfile
+            cat > Podfile <<'EOF'
+          platform :ios, '13.0'
+          target 'Runner' do
+            use_frameworks!
+            use_modular_headers!
+            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+          end
+          post_install do |installer|
+            installer.pods_project.targets.each do |target|
+              flutter_additional_ios_build_settings(target)
+              target.build_configurations.each do |config|
+                config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+                config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
+                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+              end
+            end
+          end
+          EOF
           else
             sed -i '' 's/# platform :ios, .*/platform :ios, '\''13.0'\''/' Podfile
             sed -i '' "s/platform :ios, '[0-9.]*'/platform :ios, '13.0'/" Podfile
-            if ! grep -q "CODE_SIGNING_ALLOWED.*NO" Podfile; then
-              sed -i '' '/post_install do |installer|/a\
-              \  installer.pods_project.targets.each do |target|\
-              \    target.build_configurations.each do |config|\
-              \      config.build_settings['\''CODE_SIGNING_ALLOWED'\''] = '\''NO'\''\
-              \    end\
-              \  end
-              ' Podfile
-            fi
           fi
           cd ..
 
@@ -133,10 +129,10 @@ jobs:
           pod install --repo-update
           cd ..
 
-      - name: Build iOS
+      - name: Build iOS (no codesign)
+        # 极少数情况下 flutter build 因签名事后校验返回非零，但 Runner.app 已生成。
+        # 用 set +e 容错，靠 Runner.app 是否存在判断真实结果。
         run: |
-          # 极少数情况下 flutter build 仍可能因签名事后校验返回非零，
-          # 但 Runner.app 已生成。用 set +e 容错，靠 Runner.app 是否存在判断真实结果。
           set +e
           flutter build ios --release --no-codesign
           BUILD_EXIT=$?
@@ -148,31 +144,41 @@ jobs:
             flutter build ios --release --no-codesign -v 2>&1 | tail -n 300
             exit 1
           fi
+          echo "=== Runner.app 已生成 ==="
 
-          echo "=== Runner.app 已生成，继续打包 ==="
-
-          # 创建 Payload 目录结构并拷贝 .app（不用软链接，避免 zip 行为不一致）
+      - name: Package IPA
+        # IPA 规范要求 zip 内顶层为 Payload/Runner.app。
+        # 必须压缩 Payload 目录（而非 Payload/Runner.app），否则结构错误无法安装。
+        run: |
           rm -rf Payload
           mkdir -p Payload
           cp -R build/ios/iphoneos/Runner.app Payload/
 
-          # 对 Frameworks 进行占位签名（绕过签名检查）
+          # 对 Frameworks 进行占位签名（ad-hoc），绕过签名检查
           if [ -d Payload/Runner.app/Frameworks ]; then
             find Payload/Runner.app/Frameworks -type d -name "*.framework" \
               -exec codesign --force --sign - --preserve-metadata=identifier,entitlements {} \;
           fi
 
-          # 打包成 IPA（文件名包含时间戳）
-          zip -r9 "VNclient_ios_$(date +%Y%m%d_%H%M%S).ipa" Payload/Runner.app
+          # 从仓库根目录压缩 Payload 目录，保证 zip 内含 Payload/ 顶层
+          IPA_NAME="VNclient_ios_$(date +%Y%m%d_%H%M%S).ipa"
+          zip -qry "${IPA_NAME}" Payload
+          echo "=== IPA 打包完成 ==="
+          ls -lh "${IPA_NAME}"
+          # 校验 zip 内顶层结构
+          unzip -l "${IPA_NAME}" | head -5
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VNclient-ios-ipa
+          name: VNclient-ipa
           path: VNclient_ios_*.ipa
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload .app artifact
         uses: actions/upload-artifact@v4
         with:
           name: VNclient-app
           path: build/ios/iphoneos/Runner.app
+          retention-days: 7
