@@ -1,20 +1,19 @@
 name: 构建 APK (v7a / v8a / x86-64) + 源码 zip
 
 # 触发条件:
-#   1. 推送 v1.3.2* 形式的 tag
+#   1. 推送 v* 形式的 tag
 #   2. 手动在工作流页面触发
 on:
   push:
     tags:
-      - 'v1.3.2*'
       - 'v*'
   workflow_dispatch:
 
 env:
-  # Flutter 3.27+ 的 flutter_localizations 才锁定 intl 0.20.x,
-  # 与 pubspec.yaml 中 intl ^0.20.2 兼容.
   FLUTTER_VERSION: '3.29.3'
   JAVA_VERSION: '17'
+  NDK_VERSION: '26.3.11579264'
+  APP_VERSION: '1.3.6'
 
 jobs:
   build:
@@ -24,18 +23,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # armeabi-v7a: 32 位 ARM, 覆盖老旧 Android 设备
           - abi: armeabi-v7a
             target-platform: android-arm
-            artifact-name: VNclient-v1.3.2-android-armeabi-v7a.apk
-          # arm64-v8a: 64 位 ARM, 覆盖主流现代 Android 设备
+            artifact-name: VNclient-v1.3.6-android-armeabi-v7a.apk
           - abi: arm64-v8a
             target-platform: android-arm64
-            artifact-name: VNclient-v1.3.2-android-arm64-v8a.apk
-          # x86-64: 模拟器 / Chromebook / Intel 平板
+            artifact-name: VNclient-v1.3.6-android-arm64-v8a.apk
           - abi: x86-64
             target-platform: android-x64
-            artifact-name: VNclient-v1.3.2-android-x86-64.apk
+            artifact-name: VNclient-v1.3.6-android-x86-64.apk
 
     steps:
       - name: 拉取仓库代码
@@ -54,10 +50,35 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: 显示 Flutter / Dart 版本
+      - name: 缓存 Gradle 依赖
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/pubspec.lock') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: 缓存 Android NDK ${{ env.NDK_VERSION }}
+        uses: actions/cache@v4
+        id: ndk-cache
+        with:
+          path: /usr/local/lib/android/sdk/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ runner.os }}-${{ env.NDK_VERSION }}
+
+      - name: 安装 NDK ${{ env.NDK_VERSION }} (缓存未命中时)
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
+        run: |
+          echo "NDK 缓存未命中, 安装 NDK ${{ env.NDK_VERSION }}"
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;${{ env.NDK_VERSION }}" > /dev/null || true
+
+      - name: 显示 Flutter / Java / NDK 版本
         run: |
           flutter --version
           dart --version
+          java -version
+          ls $ANDROID_HOME/ndk/ || true
 
       - name: 读取项目依赖
         run: flutter pub get
@@ -77,7 +98,6 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p output
-          # --split-per-abi 输出文件名格式: app-<abi>-release.apk
           SRC="build/app/outputs/flutter-apk/app-${{ matrix.abi }}-release.apk"
           if [ ! -f "$SRC" ]; then
             echo "::error::未找到构建产物 $SRC"
@@ -95,6 +115,40 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  bundle-apks:
+    name: 打包三个 APK 到 zip
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载所有 APK 产物
+        uses: actions/download-artifact@v4
+        with:
+          path: apks
+          merge-multiple: false
+
+      - name: 整理 APK 并打包到 zip
+        run: |
+          set -euo pipefail
+          mkdir -p staging
+          find apks -type f -name '*.apk' -exec cp {} staging/ \;
+          ls -la staging/
+          cd staging
+          zip -j "../VNclient-v1.3.6-android-apks.zip" \
+            VNclient-v1.3.6-android-armeabi-v7a.apk \
+            VNclient-v1.3.6-android-arm64-v8a.apk \
+            VNclient-v1.3.6-android-x86-64.apk
+          cd ..
+          ls -la VNclient-v1.3.6-android-apks.zip
+          unzip -l VNclient-v1.3.6-android-apks.zip
+
+      - name: 上传 APK 合并 zip 到工作流产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: VNclient-v1.3.6-android-apks
+          path: VNclient-v1.3.6-android-apks.zip
+          if-no-files-found: error
+          retention-days: 30
+
   source-zip:
     name: 生成源码 zip
     runs-on: ubuntu-latest
@@ -108,26 +162,23 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p output
-          # 使用 git archive 保证只打包仓库追踪的文件, 自动忽略 build/ .dart_tool/ 等
-          git archive --format=zip --prefix=VNclient-v1.3.2-src/ -o output/VNclient-v1.3.2-src.zip HEAD
-          # 附带 CHANGELOG 与版本信息
+          git archive --format=zip --prefix=VNclient-v1.3.6-src/ -o output/VNclient-v1.3.6-src.zip HEAD
           cp CHANGELOG.md output/CHANGELOG.md || true
           ls -la output/
-          unzip -l output/VNclient-v1.3.2-src.zip | head -20
+          unzip -l output/VNclient-v1.3.6-src.zip | head -20
 
       - name: 上传源码 zip 到工作流产物
         uses: actions/upload-artifact@v4
         with:
-          name: VNclient-v1.3.2-src
-          path: output/VNclient-v1.3.2-src.zip
+          name: VNclient-v1.3.6-src
+          path: output/VNclient-v1.3.6-src.zip
           if-no-files-found: error
           retention-days: 30
 
   release:
     name: 发布 Release
-    needs: [build, source-zip]
+    needs: [bundle-apks, source-zip]
     runs-on: ubuntu-latest
-    # 仅在打 tag 时创建 Release, 手动触发只上传工作流产物
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
@@ -143,7 +194,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p staging
-          find release-assets -type f \( -name '*.apk' -o -name '*-src.zip' \) -exec cp {} staging/ \;
+          find release-assets -type f \( -name '*.apk' -o -name '*.zip' \) -exec cp {} staging/ \;
           ls -la staging/
 
       - name: 创建 GitHub Release 并上传资产
