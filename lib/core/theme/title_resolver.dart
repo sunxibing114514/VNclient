@@ -1,12 +1,14 @@
 import '../models/vn.dart';
 import '../providers/theme_provider.dart';
 
-/// Resolves which title string to display for a VN based on the user's
+/// Resolves which title string to display based on the user's
 /// [TitleDisplayMode] preference.
 ///
-/// - [TitleDisplayMode.romanized]: the API `title` field (romanized/main).
-/// - [TitleDisplayMode.japanese]: the API `alttitle` field (original script),
-///   falling back to `title` when no alttitle is available.
+/// - [TitleDisplayMode.romanized]: the API romanized/main field
+///   (`Vn.title`, `Character.name`, `Staff.name`, …).
+/// - [TitleDisplayMode.japanese]: the API original-script field
+///   (`Vn.alttitle`, `Character.original`, `Release.alttitle`, …),
+///   falling back to the romanized form when missing.
 class TitleResolver {
   const TitleResolver._();
 
@@ -53,6 +55,40 @@ class TitleResolver {
         return title;
       case TitleDisplayMode.japanese:
         return (alttitle != null && alttitle.isNotEmpty) ? alttitle : title;
+    }
+  }
+
+  /// Resolves the primary display name from a romanized/original pair, e.g.
+  /// `Character.name` / `Character.original` or `Staff.name` /
+  /// `Staff.original`.
+  static String resolvePair(
+    String romanized,
+    String? original,
+    TitleDisplayMode mode,
+  ) {
+    switch (mode) {
+      case TitleDisplayMode.romanized:
+        return romanized;
+      case TitleDisplayMode.japanese:
+        return (original != null && original.isNotEmpty) ? original : romanized;
+    }
+  }
+
+  /// Resolves the secondary name of a romanized/original pair; returns null
+  /// when the pair carries no original-script form.
+  static String? pairSecondary(
+    String romanized,
+    String? original,
+    TitleDisplayMode mode,
+  ) {
+    if (original == null || original.isEmpty || original == romanized) {
+      return null;
+    }
+    switch (mode) {
+      case TitleDisplayMode.romanized:
+        return original;
+      case TitleDisplayMode.japanese:
+        return romanized;
     }
   }
 }

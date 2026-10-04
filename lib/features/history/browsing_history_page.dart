@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +9,7 @@ import '../../core/providers/endpoints_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/services/browsing_history_service.dart';
 import '../../core/theme/title_resolver.dart';
+import '../../widgets/nsf_image.dart';
 import '../../widgets/vndb_icons.dart';
 
 /// Displays the user's recently-viewed VNs, most-recent first.
@@ -267,17 +267,19 @@ class _HistoryTile extends ConsumerWidget {
           leading: vn.image?.thumbnail != null
               ? ClipRRect(
                   borderRadius: BorderRadius.circular(4),
-                  child: CachedNetworkImage(
-                    imageUrl: vn.image!.thumbnail!,
+                  child: NsfImage(
+                    imageUrl: vn.image!.thumbnail,
+                    sexual: vn.image?.sexual,
+                    violence: vn.image?.violence,
                     width: 48,
                     height: 70,
                     fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(
+                    placeholder: Container(
                       width: 48,
                       height: 70,
                       color: Theme.of(context).colorScheme.surface,
                     ),
-                    errorWidget: (_, __, ___) => Container(
+                    errorWidget: Container(
                       width: 48,
                       height: 70,
                       color: Theme.of(context).colorScheme.surface,

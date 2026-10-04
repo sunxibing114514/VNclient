@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/i18n/vndb_zh.dart';
 import '../../core/models/trait.dart';
 import '../../core/providers/endpoints_provider.dart';
 import 'trait_detail_page.dart';
@@ -15,8 +16,10 @@ class TraitListPage extends ConsumerStatefulWidget {
 
 class _TraitListPageState extends ConsumerState<TraitListPage> {
   final _controller = TextEditingController();
+  final _scrollController = ScrollController();
   String _term = '';
   int _page = 1;
+  int _epoch = 0;
   final List<Trait> _items = [];
   bool _hasMore = true;
   bool _loading = false;
@@ -25,17 +28,30 @@ class _TraitListPageState extends ConsumerState<TraitListPage> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _fetch(reset: true);
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200 &&
+        !_loading &&
+        _hasMore) {
+      _fetch();
+    }
   }
 
   Future<void> _fetch({bool reset = false}) async {
     if (_loading) return;
+    // epoch:丢弃 reset 之后才返回的旧请求,防止搜索竞态串页。
+    final epoch = reset ? ++_epoch : _epoch;
     if (reset) {
       _items.clear();
       _page = 1;
@@ -46,13 +62,16 @@ class _TraitListPageState extends ConsumerState<TraitListPage> {
       final result = _term.isEmpty
           ? await ref.read(traitEndpointProvider).list(page: _page)
           : await ref.read(traitEndpointProvider).search(_term, page: _page);
+      if (!mounted || epoch != _epoch) return;
       setState(() {
         _items.addAll(result.results);
         _hasMore = result.more;
+        // 关键:加载成功后推进页码,否则下滑会一直重复拉取第 1 页。
+        _page += 1;
         _fetched = true;
       });
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && epoch == _epoch) setState(() => _loading = false);
     }
   }
 
@@ -87,10 +106,10 @@ class _TraitListPageState extends ConsumerState<TraitListPage> {
             child: _fetched && _items.isEmpty
                 ? const Center(child: Text('未找到特质'))
                 : ListView.builder(
+                    controller: _scrollController,
                     itemCount: _items.length + (_hasMore ? 1 : 0),
                     itemBuilder: (context, i) {
                       if (i >= _items.length) {
-                        _fetch();
                         return const Padding(
                           padding: EdgeInsets.all(16),
                           child: Center(child: CircularProgressIndicator()),
@@ -98,9 +117,9 @@ class _TraitListPageState extends ConsumerState<TraitListPage> {
                       }
                       final t = _items[i];
                       return ListTile(
-                        title: Text(t.name),
+                        title: Text(VndbZh.traitTitle(t.id, t.name)),
                         subtitle: Text(
-                          '${t.groupName ?? "未分组"} · ${t.charCount} 角色',
+                          '${VndbZh.traitGroup(t.groupName)} · ${t.charCount} 角色',
                         ),
                         onTap: () => Navigator.of(context).push(
                           MaterialPageRoute(

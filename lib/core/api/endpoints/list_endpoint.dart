@@ -11,7 +11,7 @@ class ListEndpoint extends BaseEndpoint<UlistEntry> {
   static const String listFields =
       'id, added, voted, lastmod, vote, started, finished, notes,'
       'labels{id,label},'
-      'vn{title, alttitle, released, image{id,url,thumbnail,thumbnail_dims},'
+      'vn{title, alttitle, released, image{id,url,thumbnail,thumbnail_dims,sexual,violence},'
       'languages, platforms, devstatus, rating, votecount, tags{id,name,rating}},'
       'releases{id,list_status,title}';
 
@@ -59,13 +59,28 @@ class ListEndpoint extends BaseEndpoint<UlistEntry> {
     String vnId,
   ) {
     return query(
-      filters: ['and', ['id', '=', vnId]],
+      filters: ['id', '=', vnId],
       fields: listFields,
       sort: 'vote',
       results: 1,
       page: 1,
       user: userId,
     );
+  }
+
+  /// 查询用户列表条目总数(用于"我的列表"各栏数量显示)。
+  /// [labelId] 为空时统计全部条目。
+  Future<int> getCount(String userId, {int? labelId}) async {
+    final result = await query(
+      filters: labelId == null ? [] : ['label', '=', labelId],
+      fields: 'id',
+      sort: 'vote',
+      results: 1,
+      page: 1,
+      user: userId,
+      count: true,
+    );
+    return result.count ?? 0;
   }
 
   /// Fetches the user's list labels.
@@ -82,9 +97,14 @@ class ListEndpoint extends BaseEndpoint<UlistEntry> {
   }
 
   /// Creates or updates a list entry for [vnId].
+  ///
+  /// [clearVote] sends an explicit `null` vote, which is how the API unsets
+  /// a vote (see `PATCH /ulist/<id>`). A plain `vote: null` argument means
+  /// "leave the vote unchanged" instead.
   Future<void> patchList(
     String vnId, {
     int? vote,
+    bool clearVote = false,
     String? notes,
     String? started,
     String? finished,
@@ -93,7 +113,11 @@ class ListEndpoint extends BaseEndpoint<UlistEntry> {
     List<int>? labelsUnset,
   }) async {
     final body = <String, dynamic>{};
-    if (vote != null) body['vote'] = vote;
+    if (clearVote) {
+      body['vote'] = null;
+    } else if (vote != null) {
+      body['vote'] = vote;
+    }
     if (notes != null) body['notes'] = notes;
     if (started != null) body['started'] = started;
     if (finished != null) body['finished'] = finished;

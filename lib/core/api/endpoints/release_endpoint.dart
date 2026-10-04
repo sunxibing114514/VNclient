@@ -9,13 +9,13 @@ class ReleaseEndpoint extends BaseEndpoint<Release> {
 
   static const String listFields =
       'title, alttitle, released, platforms, languages{lang,mtl,main},'
-      'minage, official, freeware, patch, images{id,url,thumbnail,thumbnail_dims},'
+      'minage, official, freeware, patch, images{id,url,thumbnail,thumbnail_dims,sexual,violence},'
       'extlinks{url,label,name,id}';
 
   static const String detailFields =
       'title, alttitle, languages{lang,title,latin,mtl,main}, platforms,'
       'media{medium,qty}, vns{rtype,id,title}, producers{id,name,original,developer,publisher,type},'
-      'images{id,url,thumbnail,thumbnail_dims,dims,type}, released, minage, patch, freeware,'
+      'images{id,url,thumbnail,thumbnail_dims,dims,type,sexual,violence}, released, minage, patch, freeware,'
       'uncensored, official, has_ero, resolution, engine, voiced, notes, gtin, catalog,'
       'extlinks{url,label,name,id}';
 

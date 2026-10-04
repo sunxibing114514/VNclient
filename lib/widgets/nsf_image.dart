@@ -50,6 +50,12 @@ class _NsfImageState extends ConsumerState<NsfImage> {
 
   bool get _shouldBlur => _isNsfw && ref.watch(themeNotifierProvider).blurNsfw && !_revealed;
 
+  /// Small thumbnails (e.g. list card covers) only show an icon hint so the
+  /// pill doesn't dwarf the image.
+  bool get _compact =>
+      (widget.width != null && widget.width! <= 100) ||
+      (widget.height != null && widget.height! <= 110);
+
   @override
   Widget build(BuildContext context) {
     final url = widget.imageUrl;
@@ -81,19 +87,24 @@ class _NsfImageState extends ConsumerState<NsfImage> {
               child: GestureDetector(
                 onTap: () => setState(() => _revealed = true),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: _compact
+                      ? const EdgeInsets.all(3)
+                      : const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.55),
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(_compact ? 10 : 16),
                   ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.visibility_off, color: Colors.white, size: 16),
-                      SizedBox(width: 6),
-                      Text('点击查看', style: TextStyle(color: Colors.white, fontSize: 12)),
-                    ],
-                  ),
+                  child: _compact
+                      ? const Icon(Icons.visibility_off,
+                          color: Colors.white, size: 14)
+                      : const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.visibility_off, color: Colors.white, size: 16),
+                            SizedBox(width: 6),
+                            Text('点击查看', style: TextStyle(color: Colors.white, fontSize: 12)),
+                          ],
+                        ),
                 ),
               ),
             ),

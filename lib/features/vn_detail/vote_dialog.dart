@@ -49,7 +49,7 @@ class _VoteDialogState extends ConsumerState<VoteDialog> {
   Future<void> _removeVote() async {
     setState(() => _saving = true);
     try {
-      await ref.read(listEndpointProvider).patchList(widget.vnId, vote: null);
+      await ref.read(listEndpointProvider).patchList(widget.vnId, clearVote: true);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('已撤销投票')),

@@ -41,9 +41,12 @@ class AppTheme {
   /// Builds a theme tuned for a background wallpaper: transparent scaffold,
   /// semi-transparent cards/app bars, and text colors derived from the
   /// background's [brightness].
-  static ThemeData forBackground(AppBackground bg) {
+  ///
+  /// [seedColor] overrides the background's own seed color, used when the
+  /// user has explicitly picked a theme color in settings.
+  static ThemeData forBackground(AppBackground bg, {Color? seedColor}) {
     final scheme = ColorScheme.fromSeed(
-      seedColor: bg.seedColor,
+      seedColor: seedColor ?? bg.seedColor,
       brightness: bg.brightness,
     );
     return _base(

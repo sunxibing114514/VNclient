@@ -1,11 +1,14 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/i18n/vndb_zh.dart';
 import '../../core/models/character.dart';
 import '../../core/providers/endpoints_provider.dart';
+import '../../core/providers/theme_provider.dart';
+import '../../core/theme/title_resolver.dart';
 import '../../widgets/async_value_widget.dart';
+import '../../widgets/nsf_image.dart';
 import '../../widgets/section_header.dart';
 
 final _characterProvider =
@@ -32,12 +35,24 @@ class CharacterDetailPage extends ConsumerWidget {
   }
 }
 
-class _CharacterBody extends StatelessWidget {
+class _CharacterBody extends ConsumerWidget {
   const _CharacterBody({required this.character});
   final Character character;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final titleMode =
+        ref.watch(themeNotifierProvider.select((s) => s.titleDisplay));
+    final name = TitleResolver.resolvePair(
+      character.name,
+      character.original,
+      titleMode,
+    );
+    final secondary = TitleResolver.pairSecondary(
+      character.name,
+      character.original,
+      titleMode,
+    );
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
@@ -47,17 +62,19 @@ class _CharacterBody extends StatelessWidget {
             if (character.image?.url != null)
               ClipRRect(
                 borderRadius: BorderRadius.circular(6),
-                child: CachedNetworkImage(
-                  imageUrl: character.image!.url!,
+                child: NsfImage(
+                  imageUrl: character.image!.url,
+                  sexual: character.image?.sexual,
+                  violence: character.image?.violence,
                   width: 100,
                   height: 140,
                   fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(
+                  placeholder: Container(
                     width: 100,
                     height: 140,
                     color: Theme.of(context).colorScheme.surface,
                   ),
-                  errorWidget: (_, __, ___) => Container(
+                  errorWidget: Container(
                     width: 100,
                     height: 140,
                     color: Theme.of(context).colorScheme.surface,
@@ -77,10 +94,10 @@ class _CharacterBody extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(character.name,
+                  Text(name,
                       style: Theme.of(context).textTheme.titleLarge),
-                  if (character.original != null)
-                    Text(character.original!,
+                  if (secondary != null)
+                    Text(secondary,
                         style: Theme.of(context).textTheme.bodyMedium),
                   const SizedBox(height: 8),
                   if (character.aliases.isNotEmpty)
@@ -110,9 +127,12 @@ class _CharacterBody extends StatelessWidget {
             spacing: 6,
             runSpacing: 6,
             children: character.traits.map((t) {
-              final group = t.groupName == null ? '' : ' (${t.groupName})';
+              final group = t.groupName == null
+                  ? ''
+                  : ' (${VndbZh.traitGroup(t.groupName)})';
               return ActionChip(
-                label: Text(t.name + group),
+                label: Text(
+                    VndbZh.traitShort(t.id, t.name) + group),
                 onPressed: () => context.push('/trait/${t.id}'),
               );
             }).toList(),
@@ -131,7 +151,7 @@ class _CharacterBody extends StatelessWidget {
               dense: true,
               contentPadding: EdgeInsets.zero,
               title: Text(v.title),
-              subtitle: Text(v.role),
+              subtitle: Text(VndbZh.characterRole(v.role)),
               onTap: () => context.push('/vn/${v.id}'),
             ),
         ],

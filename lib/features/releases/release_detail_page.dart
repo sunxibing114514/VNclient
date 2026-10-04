@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/release.dart';
 import '../../core/providers/endpoints_provider.dart';
+import '../../core/providers/theme_provider.dart';
+import '../../core/theme/title_resolver.dart';
 import '../../widgets/async_value_widget.dart';
 import '../../widgets/section_header.dart';
 
@@ -31,19 +33,33 @@ class ReleaseDetailPage extends ConsumerWidget {
   }
 }
 
-class _ReleaseBody extends StatelessWidget {
+class _ReleaseBody extends ConsumerWidget {
   const _ReleaseBody({required this.release});
   final Release release;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final titleMode =
+        ref.watch(themeNotifierProvider.select((s) => s.titleDisplay));
+    final primaryTitle = TitleResolver.resolveSimple(
+      release.title,
+      release.alttitle,
+      titleMode,
+    );
+    final secondaryTitle = TitleResolver.resolveSimple(
+      release.alttitle ?? '',
+      release.title,
+      titleMode,
+    );
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        Text(release.title, style: Theme.of(context).textTheme.titleLarge),
-        if (release.alttitle != null) ...[
+        Text(primaryTitle, style: Theme.of(context).textTheme.titleLarge),
+        if (release.alttitle != null &&
+            release.alttitle!.isNotEmpty &&
+            secondaryTitle != primaryTitle) ...[
           const SizedBox(height: 4),
-          Text(release.alttitle!,
+          Text(secondaryTitle,
               style: Theme.of(context).textTheme.bodyMedium),
         ],
         const SizedBox(height: 8),

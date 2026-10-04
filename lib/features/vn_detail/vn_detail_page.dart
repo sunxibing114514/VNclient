@@ -9,9 +9,11 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/release.dart';
 import '../../core/models/character.dart';
 import '../../core/models/vn.dart';
+import '../../core/i18n/vndb_zh.dart';
 import '../../core/services/translation_service.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/detail_providers.dart';
+import '../../core/providers/locale_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/router/app_router.dart';
 import '../../core/services/browsing_history_service.dart';
@@ -472,7 +474,7 @@ class _OverviewTab extends ConsumerWidget {
       padding: const EdgeInsets.all(16),
       children: [
         // Description with translation
-        _DescriptionSection(description: vn.description),
+        _DescriptionSection(vnId: vn.id, description: vn.description),
         // Info rows
         _Section(title: '详情', child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -703,23 +705,30 @@ class _Section extends StatelessWidget {
   }
 }
 
-/// Description section with MyMemory translation support.
+/// Description section with translation support.
 ///
 /// Shows the original description and a translate button. When tapped, the
-/// text is sent to the MyMemory API (en→zh) and the translated result is
-/// displayed below the original. The user can toggle between original and
-/// translated views.
-class _DescriptionSection extends StatefulWidget {
-  const _DescriptionSection({this.description});
+/// translation is resolved through two sources in order:
+///  1. the community human-translation mirror (500 VNs per JSON shard),
+///     which yields hand-edited Chinese descriptions — only consulted while
+///     the app language is Chinese, since the mirror only holds Chinese;
+///  2. the MyMemory machine-translation API as a fallback.
+/// The active source is shown under the translated text, and the user can
+/// toggle between original and translated views.
+class _DescriptionSection extends ConsumerStatefulWidget {
+  const _DescriptionSection({this.vnId, this.description});
+  final String? vnId;
   final String? description;
 
   @override
-  State<_DescriptionSection> createState() => _DescriptionSectionState();
+  ConsumerState<_DescriptionSection> createState() =>
+      _DescriptionSectionState();
 }
 
-class _DescriptionSectionState extends State<_DescriptionSection> {
+class _DescriptionSectionState extends ConsumerState<_DescriptionSection> {
   static final _translator = TranslationService();
   String? _translated;
+  bool _humanTranslated = false;
   bool _translating = false;
   bool _showTranslated = false;
   String? _error;
@@ -732,14 +741,19 @@ class _DescriptionSectionState extends State<_DescriptionSection> {
       _error = null;
     });
     try {
-      final result = await _translator.translate(
+      // The community mirror only holds Chinese texts, so it is consulted
+      // only when the app language is Chinese.
+      final isZh =
+          ref.read(localeNotifierProvider).languageCode == 'zh';
+      final result = await _translator.translateVnDescription(
+        widget.vnId ?? '',
         desc,
-        sourceLang: 'en',
-        targetLang: 'zh',
+        useHumanTranslation: isZh,
       );
       if (!mounted) return;
       setState(() {
-        _translated = result;
+        _translated = result.text;
+        _humanTranslated = result.humanTranslated;
         _translating = false;
         _showTranslated = true;
       });
@@ -811,9 +825,14 @@ class _DescriptionSectionState extends State<_DescriptionSection> {
             ),
             const SizedBox(height: 8),
             Text(
-              '— 由 MyMemory API 机器翻译',
+              _humanTranslated
+                  ? '— 来自社区翻译'
+                  : '— 由 MyMemory API 机器翻译',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontStyle: FontStyle.italic,
+                    color: _humanTranslated
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
                   ),
             ),
           ] else
@@ -944,7 +963,9 @@ class _CollapsibleTagsSectionState extends State<_CollapsibleTagsSection> {
                           ? const Icon(Icons.warning_amber,
                               size: 14)
                           : null),
-                  label: Text('${t.name} (${(t.rating as num).toStringAsFixed(1)})'),
+                  // 标签优先显示中文译名,无译名时回退英文原名。
+                  label: Text(
+                      '${VndbZh.tagShort(t.id as String, t.name as String)} (${(t.rating as num).toStringAsFixed(1)})'),
                   onPressed: () => context.push('/tag/${t.id}'),
                 );
               }).toList(),
@@ -1040,12 +1061,19 @@ class _IconInfoRow extends StatelessWidget {
   }
 }
 
-class _CharacterTile extends StatelessWidget {
+class _CharacterTile extends ConsumerWidget {
   const _CharacterTile({required this.character});
   final Character character;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final titleMode =
+        ref.watch(themeNotifierProvider.select((s) => s.titleDisplay));
+    final name = TitleResolver.resolvePair(
+      character.name,
+      character.original,
+      titleMode,
+    );
     final url = character.image?.thumbnail ?? character.image?.url;
     return GestureDetector(
       onTap: () => context.push('/character/${character.id}'),
@@ -1074,7 +1102,7 @@ class _CharacterTile extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            character.name,
+            name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 12),
@@ -1092,12 +1120,14 @@ class _CharacterTile extends StatelessWidget {
   }
 }
 
-class _ReleaseGroups extends StatelessWidget {
+class _ReleaseGroups extends ConsumerWidget {
   const _ReleaseGroups({required this.releases});
   final List<Release> releases;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final titleMode =
+        ref.watch(themeNotifierProvider.select((s) => s.titleDisplay));
     final groups = <String, List<Release>>{};
     for (final r in releases) {
       final langs = r.languages.map((l) => l.lang).toList();
@@ -1136,7 +1166,11 @@ class _ReleaseGroups extends StatelessWidget {
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                 title: Text(
-                  r.title,
+                  TitleResolver.resolveSimple(
+                    r.title,
+                    r.alttitle,
+                    titleMode,
+                  ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 14),

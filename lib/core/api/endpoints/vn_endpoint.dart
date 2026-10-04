@@ -125,6 +125,41 @@ class VnEndpoint extends BaseEndpoint<Vn> {
     );
   }
 
+  /// Returns VNs developed by the given producer (identified by producer id,
+  /// e.g. `p8`), paginated and sorted by [sort] (rating / released / title).
+  ///
+  /// Used by the producer detail page to show a producer's works in-app
+  /// instead of jumping to the website. The `developer` filter takes a
+  /// nested producer filter of the form `['id', '=', pid]`.
+  Future<QueryResult<Vn>> byDeveloper(
+    String producerId, {
+    int page = 1,
+    int results = 20,
+    String sort = 'rating',
+  }) {
+    return query(
+      filters: ['developer', '=', ['id', '=', producerId]],
+      fields: listFields,
+      sort: sort,
+      reverse: true,
+      results: results,
+      page: page,
+    );
+  }
+
+  /// Total number of VNs developed by [producerId] (for the header chip).
+  Future<int> countByDeveloper(String producerId) async {
+    final result = await query(
+      filters: ['developer', '=', ['id', '=', producerId]],
+      fields: 'id',
+      sort: 'rating',
+      reverse: true,
+      results: 1,
+      count: true,
+    );
+    return result.count ?? 0;
+  }
+
   /// Returns a random VN matching the supplied filter tree.
   ///
   /// Uses the count-based random-page algorithm (same as the web reference):

@@ -1,13 +1,16 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api/endpoints/character_endpoint.dart';
 import '../../core/api/endpoints/vn_endpoint.dart';
+import '../../core/i18n/vndb_zh.dart';
 import '../../core/l10n/app_localizations.dart';
 import '../../core/models/vn.dart';
 import '../../core/providers/endpoints_provider.dart';
+import '../../core/providers/theme_provider.dart';
+import '../../core/theme/title_resolver.dart';
+import '../../widgets/nsf_image.dart';
 import '../../widgets/vn_card.dart';
 
 /// 搜索目标类型。每种目标有独立的字段筛选与排序选项。
@@ -1064,6 +1067,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   /// Builds a result tile appropriate for the current search target.
   Widget _buildResultTile(dynamic item) {
+    final titleMode =
+        ref.watch(themeNotifierProvider.select((s) => s.titleDisplay));
     switch (_target) {
       case SearchTarget.vn:
         final vn = item as Vn;
@@ -1076,12 +1081,14 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           leading: item.image?.url != null
               ? ClipRRect(
                   borderRadius: BorderRadius.circular(4),
-                  child: CachedNetworkImage(
-                    imageUrl: item.image!.url!,
+                  child: NsfImage(
+                    imageUrl: item.image!.url,
+                    sexual: item.image?.sexual,
+                    violence: item.image?.violence,
                     width: 48,
                     height: 64,
                     fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => Container(
+                    errorWidget: Container(
                       width: 48,
                       height: 64,
                       color: Theme.of(context).colorScheme.surface,
@@ -1090,9 +1097,14 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                   ),
                 )
               : null,
-          title: item.name ?? '',
+          title: TitleResolver.resolvePair(
+              item.name ?? '', item.original, titleMode),
           subtitle: [
-            if (item.original != null) item.original,
+            if (TitleResolver.pairSecondary(
+                    item.name ?? '', item.original, titleMode) !=
+                null)
+              TitleResolver.pairSecondary(
+                  item.name ?? '', item.original, titleMode)!,
             if (item.vns != null && item.vns.isNotEmpty) item.vns.first.title,
           ].join(' · '),
           onTap: () => context.push('/character/${item.id}'),
@@ -1136,9 +1148,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       case SearchTarget.tag:
         return _GenericResultTile(
           leading: const CircleAvatar(child: Icon(Icons.label)),
-          title: item.name ?? '',
+          title: VndbZh.tagTitle(item.id ?? '', item.name ?? ''),
           subtitle: [
-            _tagCategoryLabel(item.category),
+            VndbZh.tagCategory(item.category),
             if (item.vn_count != null) '${item.vn_count} VN',
           ].join(' · '),
           onTap: () => context.push('/tag/${item.id}'),
@@ -1146,9 +1158,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       case SearchTarget.trait:
         return _GenericResultTile(
           leading: const CircleAvatar(child: Icon(Icons.category)),
-          title: item.name ?? '',
+          title: VndbZh.traitTitle(item.id ?? '', item.name ?? ''),
           subtitle: [
-            if (item.group_name != null) item.group_name,
+            if (item.group_name != null) VndbZh.traitGroup(item.group_name),
             if (item.char_count != null) '${item.char_count} 角色',
             if (item.sexual == true) '色情',
           ].join(' · '),
@@ -1170,18 +1182,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
   }
 
-  String _tagCategoryLabel(String? category) {
-    switch (category) {
-      case 'cont':
-        return '内容';
-      case 'tech':
-        return '技术';
-      case 'ero':
-        return '色情';
-      default:
-        return '';
-    }
-  }
 }
 
 /// A generic list tile used for non-VN search results.

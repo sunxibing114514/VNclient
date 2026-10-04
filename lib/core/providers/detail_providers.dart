@@ -91,6 +91,20 @@ final userLabelsProvider =
   return ref.watch(listEndpointProvider).getLabels(userId);
 });
 
+/// Total number of entries in the current user's VN list (all labels),
+/// used for the "全部" tab count. Returns null when unavailable.
+final userListTotalCountProvider =
+    FutureProvider.autoDispose<int?>((ref) async {
+  final auth = ref.watch(authNotifierProvider);
+  final userId = auth.user?.id;
+  if (userId == null) return null;
+  try {
+    return await ref.watch(listEndpointProvider).getCount(userId);
+  } catch (_) {
+    return null;
+  }
+});
+
 /// Fetches the current user's list with an optional label filter.
 final userListProvider = FutureProvider.autoDispose
     .family<QueryResult<UlistEntry>, UserListQuery>((ref, query) {

@@ -24,10 +24,10 @@ class VndbApp extends ConsumerWidget {
     final hasBg = theme.backgroundId != 'none';
     final bg = theme.background;
     final darkTheme = hasBg
-        ? AppTheme.forBackground(bg)
+        ? AppTheme.forBackground(bg, seedColor: theme.effectiveSeedColor)
         : AppTheme.dark(seedColor: theme.effectiveSeedColor);
     final lightTheme = hasBg
-        ? AppTheme.forBackground(bg)
+        ? AppTheme.forBackground(bg, seedColor: theme.effectiveSeedColor)
         : AppTheme.light(seedColor: theme.effectiveSeedColor);
     // When a background is active, force the theme mode to match the
     // background's brightness so text colors are correct.

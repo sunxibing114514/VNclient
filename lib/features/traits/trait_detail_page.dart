@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/i18n/vndb_zh.dart';
 import '../../core/models/character.dart';
 import '../../core/models/trait.dart';
 import '../../core/providers/endpoints_provider.dart';
+import '../../core/providers/theme_provider.dart';
+import '../../core/theme/title_resolver.dart';
 import '../../widgets/async_value_widget.dart';
 import '../../widgets/section_header.dart';
 
@@ -51,8 +54,11 @@ class _TraitBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final chars = ref.watch(_traitCharsProvider(trait.id));
+    final titleMode =
+        ref.watch(themeNotifierProvider.select((s) => s.titleDisplay));
     return Scaffold(
-      appBar: AppBar(title: Text(trait.name)),
+      appBar: AppBar(
+          title: Text(VndbZh.traitTitle(trait.id, trait.name))),
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [
@@ -60,9 +66,10 @@ class _TraitBody extends ConsumerWidget {
             spacing: 8,
             runSpacing: 4,
             children: [
-              if (trait.groupName != null) Chip(label: Text(trait.groupName!)),
+              if (trait.groupName != null)
+                Chip(label: Text(VndbZh.traitGroup(trait.groupName))),
               Chip(label: Text('${trait.charCount} 角色')),
-              if (trait.sexual) const Chip(label: Text('Sexual')),
+              if (trait.sexual) const Chip(label: Text('性相关')),
             ],
           ),
           const SizedBox(height: 12),
@@ -74,8 +81,11 @@ class _TraitBody extends ConsumerWidget {
             data: (list) => Column(
               children: list
                   .map((c) => ListTile(
-                        title: Text(c.name),
-                        subtitle: Text(c.original ?? ''),
+                        title: Text(TitleResolver.resolvePair(
+                            c.name, c.original, titleMode)),
+                        subtitle: Text(TitleResolver.pairSecondary(
+                                c.name, c.original, titleMode) ??
+                            ''),
                         onTap: () => context.push('/character/${c.id}'),
                       ))
                   .toList(),

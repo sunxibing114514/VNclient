@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/i18n/vndb_zh.dart';
 import '../../core/models/tag.dart';
 import '../../core/providers/endpoints_provider.dart';
 import 'tag_detail_page.dart';
@@ -21,6 +22,7 @@ class _TagListPageState extends ConsumerState<TagListPage> {
   String? _category; // null = all, 'cont', 'ero', 'tech'
   String _sort = 'name'; // 'name' or 'vn_count'
   int _page = 1;
+  int _epoch = 0;
   final List<Tag> _items = [];
   bool _hasMore = true;
   bool _loading = false;
@@ -63,6 +65,8 @@ class _TagListPageState extends ConsumerState<TagListPage> {
 
   Future<void> _fetch({bool reset = false}) async {
     if (_loading) return;
+    // epoch:丢弃在 reset 之后才返回的旧请求,防止搜索竞态串页。
+    final epoch = reset ? ++_epoch : _epoch;
     if (reset) {
       _items.clear();
       _page = 1;
@@ -78,9 +82,12 @@ class _TagListPageState extends ConsumerState<TagListPage> {
               category: _category,
             )
           : await endpoint.search(_term, page: _page);
+      if (!mounted || epoch != _epoch) return;
       setState(() {
         _items.addAll(result.results);
         _hasMore = result.more;
+        // 关键:加载成功后推进页码,否则下滑会一直重复拉取第 1 页。
+        _page += 1;
         _fetched = true;
       });
     } catch (e) {
@@ -90,7 +97,7 @@ class _TagListPageState extends ConsumerState<TagListPage> {
         );
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && epoch == _epoch) setState(() => _loading = false);
     }
   }
 
@@ -180,9 +187,10 @@ class _TagListPageState extends ConsumerState<TagListPage> {
                         }
                         final t = _items[i];
                         return ListTile(
-                          title: Text(t.name),
+                          title:
+                              Text(VndbZh.tagTitle(t.id, t.name)),
                           subtitle: Text(
-                              '${t.categoryLabel} · ${t.vnCount} VN'),
+                              '${VndbZh.tagCategory(t.category)} · ${t.vnCount} VN'),
                           trailing: t.vnCount > 0
                               ? CircleAvatar(
                                   radius: 14,

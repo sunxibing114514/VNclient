@@ -1,10 +1,12 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api/endpoints/character_endpoint.dart';
 import '../../core/providers/endpoints_provider.dart';
+import '../../core/providers/theme_provider.dart';
+import '../../core/theme/title_resolver.dart';
+import '../../widgets/nsf_image.dart';
 
 /// A searchable, paginated list of all characters with advanced filtering.
 class CharacterListPage extends ConsumerStatefulWidget {
@@ -18,6 +20,7 @@ class _CharacterListPageState extends ConsumerState<CharacterListPage> {
   final _controller = TextEditingController();
   String _term = '';
   int _page = 1;
+  int _epoch = 0;
   final _items = <dynamic>[];
   bool _hasMore = true;
   bool _loading = false;
@@ -199,6 +202,8 @@ class _CharacterListPageState extends ConsumerState<CharacterListPage> {
 
   Future<void> _fetch({bool reset = false}) async {
     if (_loading) return;
+    // epoch:丢弃 reset 之后才返回的旧请求,防止搜索竞态串页。
+    final epoch = reset ? ++_epoch : _epoch;
     if (reset) {
       _items.clear();
       _page = 1;
@@ -218,19 +223,22 @@ class _CharacterListPageState extends ConsumerState<CharacterListPage> {
             page: _page,
             results: 50,
           );
+      if (!mounted || epoch != _epoch) return;
       setState(() {
         _items.addAll(result.results);
         _hasMore = result.more;
+        // 关键:加载成功后推进页码,否则下滑会一直重复拉取第 1 页。
+        _page += 1;
         _fetched = true;
       });
     } catch (e) {
-      if (mounted) {
+      if (mounted && epoch == _epoch) {
         setState(() => _error = e);
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('$e')));
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && epoch == _epoch) setState(() => _loading = false);
     }
   }
 
@@ -538,6 +546,8 @@ class _CharacterListPageState extends ConsumerState<CharacterListPage> {
   }
 
   Widget _buildBody() {
+    final titleMode =
+        ref.watch(themeNotifierProvider.select((s) => s.titleDisplay));
     if (_error != null && _items.isEmpty && !_loading) {
       return Center(
         child: Column(
@@ -577,17 +587,19 @@ class _CharacterListPageState extends ConsumerState<CharacterListPage> {
               leading: c.image?.url != null
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(4),
-                      child: CachedNetworkImage(
-                        imageUrl: c.image!.url!,
+                      child: NsfImage(
+                        imageUrl: c.image!.url,
+                        sexual: c.image?.sexual,
+                        violence: c.image?.violence,
                         width: 48,
                         height: 64,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(
+                        placeholder: Container(
                           width: 48,
                           height: 64,
                           color: Theme.of(context).colorScheme.surface,
                         ),
-                        errorWidget: (_, __, ___) => Container(
+                        errorWidget: Container(
                           width: 48,
                           height: 64,
                           color: Theme.of(context).colorScheme.surface,
@@ -602,12 +614,16 @@ class _CharacterListPageState extends ConsumerState<CharacterListPage> {
                       child: const Icon(Icons.person),
                     ),
               title: Text(
-                c.name,
+                TitleResolver.resolvePair(c.name, c.original, titleMode),
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               subtitle: Text(
                 [
-                  if (c.original != null) c.original,
+                  if (TitleResolver.pairSecondary(
+                          c.name, c.original, titleMode) !=
+                      null)
+                    TitleResolver.pairSecondary(
+                        c.name, c.original, titleMode)!,
                   if (c.vns.isNotEmpty) c.vns.first.title,
                 ].join(' · '),
                 maxLines: 1,

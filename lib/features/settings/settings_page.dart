@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/app_localizations.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/detail_providers.dart';
 import '../../core/providers/locale_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/services/update_checker.dart';
@@ -48,6 +49,58 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final pass = await _storage.read(key: 'vndb_web_pass') ?? '';
     _userController.text = user;
     _passController.text = pass;
+  }
+
+  /// 切换到另一个已保存的账户并刷新用户相关数据。
+  Future<void> _switchAccount(
+    BuildContext context,
+    WidgetRef ref,
+    StoredAccount account,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+    final ok = await ref
+        .read(authNotifierProvider.notifier)
+        .switchAccount(account.token);
+    if (!ok) return;
+    // 使依赖登录用户的缓存数据失效,各页面会自动重新拉取。
+    // (userVnListEntryProvider 监听 auth,切换账户后会自动重建)
+    ref.invalidate(userLabelsProvider);
+    ref.invalidate(userListTotalCountProvider);
+    messenger.showSnackBar(
+      SnackBar(content: Text('已切换到 ${account.username}')),
+    );
+    router.go('/home');
+  }
+
+  /// 忘记一个已保存的账户(不影响服务器上的数据)。
+  Future<void> _confirmRemoveAccount(
+    BuildContext context,
+    WidgetRef ref,
+    StoredAccount account,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('移除账户'),
+        content: Text(
+            '忘记账户 ${account.username} 吗?\n该操作不会影响服务器上的数据,也不会退出网页版登录。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('移除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await ref.read(authNotifierProvider.notifier).removeAccount(account.token);
+    ref.invalidate(userLabelsProvider);
+    ref.invalidate(userListTotalCountProvider);
   }
 
   Future<void> _saveCredentials() async {
@@ -146,12 +199,20 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       body: ListView(
         children: [
           _SectionTitle(l10n.tr('account')),
+          // 当前账户。
           ListTile(
-            leading: const Icon(Icons.vpn_key),
-            title: Text(l10n.tr('apiToken')),
-            subtitle: Text(auth.isAuthenticated
-                ? '${l10n.tr("loggedIn")}: ${auth.user?.username} (${auth.user?.id})'
+            leading: CircleAvatar(
+              child: Text(
+                (auth.user?.username ?? '?').substring(0, 1).toUpperCase(),
+                style: const TextStyle(fontSize: 18),
+              ),
+            ),
+            title: Text(auth.isAuthenticated
+                ? '${auth.user?.username} (${auth.user?.id})'
                 : l10n.tr('notLoggedIn')),
+            subtitle: auth.isAuthenticated
+                ? const Text('当前账户')
+                : null,
             trailing: auth.isAuthenticated
                 ? TextButton(
                     onPressed: () async {
@@ -167,14 +228,47 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     child: Text(l10n.tr('signIn')),
                   ),
           ),
+          // 其他已登录账户,点击即可切换。
+          for (final account in auth.accounts)
+            if (account.token != auth.token)
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor:
+                      Theme.of(context).colorScheme.secondaryContainer,
+                  child: Text(
+                    account.username.isEmpty
+                        ? '?'
+                        : account.username.substring(0, 1).toUpperCase(),
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
+                title: Text('${account.username} (${account.id})'),
+                subtitle: const Text('已保存 · 点击切换'),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  tooltip: '忘记此账户',
+                  onPressed: () =>
+                      _confirmRemoveAccount(context, ref, account),
+                ),
+                onTap: () => _switchAccount(context, ref, account),
+              ),
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.person_add_alt),
+            title: const Text('添加账户'),
+            onTap: () => context.push('/login'),
+          ),
           const Divider(),
           _SectionTitle(l10n.tr('appearance')),
           ListTile(
             leading: const Icon(Icons.palette),
             title: Text(l10n.tr('seedColor')),
-            subtitle: theme.backgroundId != 'none'
-                ? const Text('跟随背景主题', style: TextStyle(fontSize: 11))
-                : null,
+            subtitle: theme.useCustomSeedColor
+                ? const Text('自定义颜色', style: TextStyle(fontSize: 11))
+                : theme.backgroundId != 'none'
+                    ? const Text('跟随背景主题',
+                        style: TextStyle(fontSize: 11))
+                    : null,
             trailing: _ColorIndicator(
               color: theme.effectiveSeedColor,
               onTap: () => _pickColor(context, theme.effectiveSeedColor),

@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/quote.dart';
 import '../../core/providers/endpoints_provider.dart';
+import '../../core/providers/theme_provider.dart';
+import '../../core/theme/title_resolver.dart';
 import '../../widgets/async_value_widget.dart';
 
 /// Page that displays a random quote (like the VNDB footer) and lets the user
@@ -38,12 +40,18 @@ final _randomQuoteProvider = FutureProvider.autoDispose<Quote>((ref) {
   return ref.watch(quoteEndpointProvider).random();
 });
 
-class _QuoteCard extends StatelessWidget {
+class _QuoteCard extends ConsumerWidget {
   const _QuoteCard({required this.quote});
   final Quote quote;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final titleMode =
+        ref.watch(themeNotifierProvider.select((s) => s.titleDisplay));
+    final vnTitle = quote.vn == null
+        ? ''
+        : TitleResolver.resolveSimple(
+            quote.vn!.title, quote.vn!.alttitle, titleMode);
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -70,7 +78,7 @@ class _QuoteCard extends StatelessWidget {
                   ),
                 if (quote.vn != null)
                   ActionChip(
-                    label: Text(quote.vn!.title),
+                    label: Text(vnTitle),
                     onPressed: () => context.push('/vn/${quote.vn!.id}'),
                   ),
               ],
