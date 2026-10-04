@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/staff.dart';
 import '../../core/providers/detail_providers.dart';
 import '../../core/providers/endpoints_provider.dart';
+import '../../core/providers/theme_provider.dart';
+import '../../core/theme/title_resolver.dart';
 import '../../widgets/async_value_widget.dart';
 import '../../widgets/section_header.dart';
 
@@ -40,16 +42,28 @@ class _StaffBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final vns = ref.watch(vnsByStaffProvider(staffId));
+    final titleMode =
+        ref.watch(themeNotifierProvider.select((s) => s.titleDisplay));
+    final primaryName = TitleResolver.resolvePair(
+      staff.name,
+      staff.original,
+      titleMode,
+    );
+    final secondaryName = TitleResolver.pairSecondary(
+      staff.name,
+      staff.original,
+      titleMode,
+    );
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         // Name header
-        Text(staff.name, style: Theme.of(context).textTheme.headlineSmall),
-        if (staff.original != null && staff.original!.isNotEmpty)
+        Text(primaryName, style: Theme.of(context).textTheme.headlineSmall),
+        if (secondaryName != null && secondaryName.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 2),
-            child: Text(staff.original!,
+            child: Text(secondaryName,
                 style: Theme.of(context).textTheme.bodyMedium),
           ),
         const SizedBox(height: 12),

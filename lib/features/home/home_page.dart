@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,9 +9,12 @@ import '../../core/models/character.dart';
 import '../../core/models/vn.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/detail_providers.dart';
+import '../../core/providers/theme_provider.dart';
 import '../../core/router/app_router.dart';
 import '../../core/services/follow_service.dart';
+import '../../core/theme/title_resolver.dart';
 import '../../widgets/async_value_widget.dart';
+import '../../widgets/nsf_image.dart';
 import '../../widgets/release_card.dart';
 import '../../widgets/section_header.dart';
 import 'home_provider.dart';
@@ -538,13 +540,25 @@ class _TodayBirthdaysSection extends ConsumerWidget {
   }
 }
 
-/// 单个今日生日角色卡片：圆形头像 + 名字 + 原名。
-class _BirthdayCard extends StatelessWidget {
+/// 单个今日生日角色卡片:圆形头像 + 名字 + 原名(按日文/罗马音偏好排序)。
+class _BirthdayCard extends ConsumerWidget {
   const _BirthdayCard({required this.character});
   final Character character;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final titleMode =
+        ref.watch(themeNotifierProvider.select((s) => s.titleDisplay));
+    final name = TitleResolver.resolvePair(
+      character.name,
+      character.original,
+      titleMode,
+    );
+    final secondary = TitleResolver.pairSecondary(
+      character.name,
+      character.original,
+      titleMode,
+    );
     final img = character.image?.url;
     return SizedBox(
       width: 110,
@@ -558,13 +572,15 @@ class _BirthdayCard extends StatelessWidget {
                 height: 110,
                 width: double.infinity,
                 child: img != null
-                    ? CachedNetworkImage(
+                    ? NsfImage(
                         imageUrl: img,
+                        sexual: character.image?.sexual,
+                        violence: character.image?.violence,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(
+                        placeholder: Container(
                           color: Theme.of(context).colorScheme.surface,
                         ),
-                        errorWidget: (_, __, ___) => Container(
+                        errorWidget: Container(
                           color: Theme.of(context).colorScheme.surface,
                           child: const Icon(Icons.person, size: 32),
                         ),
@@ -579,15 +595,15 @@ class _BirthdayCard extends StatelessWidget {
                 child: Column(
                   children: [
                     Text(
-                      character.name,
+                      name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                           fontSize: 11, fontWeight: FontWeight.w600),
                     ),
-                    if (character.original != null)
+                    if (secondary != null)
                       Text(
-                        character.original!,
+                        secondary,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall,
@@ -603,13 +619,16 @@ class _BirthdayCard extends StatelessWidget {
   }
 }
 
-class _VnCard extends StatelessWidget {
+class _VnCard extends ConsumerWidget {
   const _VnCard({required this.vn, this.onTap});
   final Vn vn;
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final titleMode =
+        ref.watch(themeNotifierProvider.select((s) => s.titleDisplay));
+    final title = TitleResolver.resolve(vn, titleMode);
     final img = vn.image?.thumbnail ?? vn.image?.url;
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -622,13 +641,15 @@ class _VnCard extends StatelessWidget {
               height: 100,
               width: double.infinity,
               child: img != null
-                  ? CachedNetworkImage(
+                  ? NsfImage(
                       imageUrl: img,
+                      sexual: vn.image?.sexual,
+                      violence: vn.image?.violence,
                       fit: BoxFit.cover,
-                      placeholder: (_, __) => Container(
+                      placeholder: Container(
                         color: Theme.of(context).colorScheme.surface,
                       ),
-                      errorWidget: (_, __, ___) => Container(
+                      errorWidget: Container(
                         color: Theme.of(context).colorScheme.surface,
                         child: const Icon(Icons.book, size: 28),
                       ),
@@ -644,7 +665,7 @@ class _VnCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    vn.title,
+                    title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(

@@ -29,14 +29,16 @@ class Quote {
 }
 
 class QuoteVn {
-  const QuoteVn({this.id = '', this.title = ''});
+  const QuoteVn({this.id = '', this.title = '', this.alttitle});
 
   final String id;
   final String title;
+  final String? alttitle;
 
   factory QuoteVn.fromJson(Map<String, dynamic> json) => QuoteVn(
         id: json['id'] as String? ?? '',
         title: json['title'] as String? ?? '',
+        alttitle: json['alttitle'] as String?,
       );
 }
 

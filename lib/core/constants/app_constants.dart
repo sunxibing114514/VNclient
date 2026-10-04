@@ -9,7 +9,7 @@ class AppConstants {
   static const String siteBaseUrl = 'https://vndb.org';
 
   /// Current app version (keep in sync with pubspec.yaml).
-  static const String appVersion = '1.3.5';
+  static const String appVersion = '1.3.6';
 
   /// GitHub releases API endpoint for update checking.
   static const String githubReleasesApi =
@@ -23,6 +23,10 @@ class AppConstants {
 
   /// Secure storage key for the cached username.
   static const String usernameKey = 'vndb_username';
+
+  /// Secure storage key for the remembered-accounts JSON list
+  /// (multi-account login support).
+  static const String accountsKey = 'vndb_accounts';
 
   /// Default page size for paginated queries.
   static const int defaultPageSize = 20;

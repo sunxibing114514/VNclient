@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/i18n/vndb_zh.dart';
 import '../../core/models/tag.dart';
 import '../../core/models/vn.dart';
 import '../../core/providers/endpoints_provider.dart';
@@ -104,7 +105,8 @@ class _TagBodyState extends ConsumerState<_TagBody> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.tag.name)),
+      appBar: AppBar(
+          title: Text(VndbZh.tagTitle(widget.tag.id, widget.tag.name))),
       body: ListView(
         controller: _scrollController,
         padding: const EdgeInsets.all(12),
@@ -113,7 +115,9 @@ class _TagBodyState extends ConsumerState<_TagBody> {
             spacing: 8,
             runSpacing: 4,
             children: [
-              Chip(label: Text(widget.tag.categoryLabel)),
+              Chip(
+                  label: Text(
+                      VndbZh.tagCategory(widget.tag.category))),
               Chip(label: Text('${widget.tag.vnCount} VN')),
               if (!widget.tag.applicable)
                 const Chip(label: Text('Not applicable')),

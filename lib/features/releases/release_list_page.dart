@@ -17,6 +17,7 @@ class _ReleaseListPageState extends ConsumerState<ReleaseListPage> {
   final _controller = TextEditingController();
   String _term = '';
   int _page = 1;
+  int _epoch = 0;
   final _items = <dynamic>[];
   bool _hasMore = true;
   bool _loading = false;
@@ -36,6 +37,8 @@ class _ReleaseListPageState extends ConsumerState<ReleaseListPage> {
 
   Future<void> _fetch({bool reset = false}) async {
     if (_loading) return;
+    // epoch:丢弃 reset 之后才返回的旧请求,防止搜索竞态串页。
+    final epoch = reset ? ++_epoch : _epoch;
     if (reset) {
       _items.clear();
       _page = 1;
@@ -46,18 +49,21 @@ class _ReleaseListPageState extends ConsumerState<ReleaseListPage> {
       final result = await ref
           .read(releaseEndpointProvider)
           .search(_term, page: _page);
+      if (!mounted || epoch != _epoch) return;
       setState(() {
         _items.addAll(result.results);
         _hasMore = result.more;
+        // 关键:加载成功后推进页码,否则下滑会一直重复拉取第 1 页。
+        _page += 1;
         _fetched = true;
       });
     } catch (e) {
-      if (mounted) {
+      if (mounted && epoch == _epoch) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('$e')));
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && epoch == _epoch) setState(() => _loading = false);
     }
   }
 

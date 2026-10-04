@@ -7,7 +7,8 @@ import 'base_endpoint.dart';
 class QuoteEndpoint extends BaseEndpoint<Quote> {
   QuoteEndpoint(super.client);
 
-  static const String listFields = 'quote, score, vn{id,title}, character{id,name}';
+  static const String listFields =
+      'quote, score, vn{id,title,alttitle}, character{id,name}';
 
   @override
   String get path => '/quote';

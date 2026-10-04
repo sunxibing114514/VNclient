@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +11,7 @@ import '../../core/providers/detail_providers.dart';
 import '../../core/providers/endpoints_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/theme/title_resolver.dart';
+import '../../widgets/nsf_image.dart';
 import '../../widgets/section_header.dart';
 import '../../widgets/vndb_icons.dart';
 import '../vn_detail/list_edit_dialog.dart';
@@ -97,9 +97,20 @@ class UserListPage extends ConsumerWidget {
             6: '黑名单',
           };
 
+          // Per-label VN counts (from GET /ulist_labels with fields=count).
+          final countById = <int?, int>{
+            for (final l in apiLabels) l.id: l.count,
+          };
+          // Total entry count for the "全部" tab.
+          final totalCount = ref.watch(userListTotalCountProvider).valueOrNull;
+
+          String tabLabel(String label, int? labelId, int? count) =>
+              count == null ? label : '$label ($count)';
+
           for (final id in predefined) {
             tabs.add(_ListTab(
-              label: predefinedNames[id] ?? 'Label $id',
+              label: tabLabel(
+                  predefinedNames[id] ?? 'Label $id', id, countById[id]),
               labelId: id,
             ));
           }
@@ -108,7 +119,10 @@ class UserListPage extends ConsumerWidget {
           for (final l in apiLabels) {
             if (predefined.contains(l.id)) continue;
             if (l.id == 0) continue; // skip "no label"
-            tabs.add(_ListTab(label: l.label, labelId: l.id));
+            tabs.add(_ListTab(
+              label: tabLabel(l.label, l.id, l.count),
+              labelId: l.id,
+            ));
           }
 
           // Resolve initial index.
@@ -134,7 +148,14 @@ class UserListPage extends ConsumerWidget {
                   isScrollable: true,
                   tabAlignment: TabAlignment.start,
                   tabs: [
-                    for (final t in tabs) Tab(text: t.label),
+                    for (var i = 0; i < tabs.length; i++)
+                      Tab(
+                        text: i == 0
+                            ? (totalCount == null
+                                ? tabs[i].label
+                                : '${tabs[i].label} ($totalCount)')
+                            : tabs[i].label,
+                      ),
                   ],
                 ),
                 Expanded(
@@ -171,7 +192,6 @@ class _ListTabView extends ConsumerStatefulWidget {
 
 class _ListTabViewState extends ConsumerState<_ListTabView>
     with AutomaticKeepAliveClientMixin {
-  int _page = 1;
   final _items = <dynamic>[];
   bool _hasMore = true;
   bool _loading = false;
@@ -250,6 +270,18 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
   @override
   bool get wantKeepAlive => true;
 
+  final _scrollController = ScrollController();
+
+  /// Bumped on every reset so in-flight responses for a previous query get
+  /// discarded instead of appending stale items.
+  int _epoch = 0;
+
+  /// 下一页页码(_page = 已加载数 + 1)。
+  int _page = 1;
+
+  /// 刷新保留位置时最多重新拉取的页数,防止触发限流。
+  static const int _maxRefreshPages = 8;
+
   @override
   void initState() {
     super.initState();
@@ -258,6 +290,7 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _searchController.dispose();
     _debounce?.cancel();
     _tagController.dispose();
@@ -318,12 +351,18 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
     final auth = ref.read(authNotifierProvider);
     final userId = auth.user?.id;
     if (userId == null) return;
-    if (_loading) return;
     if (reset) {
-      _items.clear();
-      _page = 1;
-      _hasMore = true;
+      // 抛弃旧的查询结果(包括仍在途的请求),从第 1 页重新开始。
+      _epoch++;
+      setState(() {
+        _items.clear();
+        _page = 1;
+        _hasMore = true;
+      });
+    } else if (_loading) {
+      return;
     }
+    final epoch = _epoch;
     setState(() {
       _loading = true;
       _error = null;
@@ -337,12 +376,15 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
             page: _page,
             extraFilters: _buildExtraFilters(),
           );
+      if (!mounted || epoch != _epoch) return;
       setState(() {
         _items.addAll(result.results);
         _hasMore = result.more;
+        _page += 1;
         _loading = false;
       });
     } catch (e) {
+      if (!mounted || epoch != _epoch) return;
       setState(() {
         _error = e;
         _loading = false;
@@ -352,12 +394,69 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
 
   Future<void> _loadMore() async {
     if (!_hasMore || _loading) return;
-    _page += 1;
     await _fetch();
   }
 
+  /// 保存滚动位置地刷新:重新拉取当前已加载的各页数据后原位恢复,
+  /// 用于"修改列表条目保存后"与下拉刷新,避免列表跳回顶部。
   Future<void> _onRefresh() async {
-    await _fetch(reset: true);
+    final auth = ref.read(authNotifierProvider);
+    final userId = auth.user?.id;
+    if (userId == null) return;
+    if (_loading || _items.isEmpty) {
+      // 首次进入还没有数据,走普通重置逻辑。
+      await _fetch(reset: true);
+      return;
+    }
+
+    final savedPages = (_page - 1).clamp(1, _maxRefreshPages);
+    final savedOffset =
+        _scrollController.hasClients ? _scrollController.offset : 0.0;
+    final epoch = ++_epoch;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final fresh = <dynamic>[];
+      var more = true;
+      for (var p = 1; p <= savedPages && more; p++) {
+        final result = await ref.read(listEndpointProvider).getList(
+              userId,
+              labelId: widget.labelId,
+              sort: _sort,
+              reverse: _reverse,
+              page: p,
+              extraFilters: _buildExtraFilters(),
+            );
+        if (!mounted || epoch != _epoch) return;
+        fresh.addAll(result.results);
+        more = result.more;
+      }
+      setState(() {
+        _items
+          ..clear()
+          ..addAll(fresh);
+        _hasMore = more;
+        _page = savedPages + 1;
+        _loading = false;
+      });
+      if (savedOffset > 0) {
+        // 等列表重建完成后恢复滚动位置(并按新内容裁剪)。
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || epoch != _epoch) return;
+          if (!_scrollController.hasClients) return;
+          final max = _scrollController.position.maxScrollExtent;
+          _scrollController.jumpTo(savedOffset.clamp(0, max));
+        });
+      }
+    } catch (e) {
+      if (!mounted || epoch != _epoch) return;
+      setState(() {
+        _error = e;
+        _loading = false;
+      });
+    }
   }
 
   void _resetFilters() {
@@ -613,6 +712,7 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
       ]);
     }
     return ListView.builder(
+      controller: _scrollController,
       itemCount: _items.length + (_hasMore ? 1 : 0),
       itemBuilder: (context, i) {
         if (i >= _items.length) {
@@ -713,17 +813,19 @@ class _ListEntryTile extends ConsumerWidget {
           leading: vn?.image?.thumbnail != null
               ? ClipRRect(
                   borderRadius: BorderRadius.circular(4),
-                  child: CachedNetworkImage(
-                    imageUrl: vn!.image!.thumbnail!,
+                  child: NsfImage(
+                    imageUrl: vn!.image!.thumbnail,
+                    sexual: vn.image?.sexual as num?,
+                    violence: vn.image?.violence as num?,
                     width: 48,
                     height: 70,
                     fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(
+                    placeholder: Container(
                       width: 48,
                       height: 70,
                       color: Theme.of(context).colorScheme.surface,
                     ),
-                    errorWidget: (_, __, ___) => Container(
+                    errorWidget: Container(
                       width: 48,
                       height: 70,
                       color: Theme.of(context).colorScheme.surface,

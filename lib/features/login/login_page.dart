@@ -58,7 +58,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             const SizedBox(height: 8),
             Text(
               '在你的 VNDB 个人资料 → Applications 页面创建一个 API Token，'
-              '然后粘贴到下方。Token 形如 xxxx-xxxxx-xxxxx-xxxx-xxxxx-xxxxx-xxxx。',
+              '然后粘贴到下方。Token 形如 xxxx-xxxxx-xxxxx-xxxx-xxxxx-xxxxx-xxxx。\n'
+              '支持保存多个账户: 登录后可在设置中一键切换。',
               style: Theme.of(context).textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),

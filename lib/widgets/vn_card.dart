@@ -1,10 +1,11 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/models/image_ref.dart';
 import '../core/models/vn.dart';
 import '../core/providers/theme_provider.dart';
 import '../core/theme/title_resolver.dart';
+import 'nsf_image.dart';
 import 'rating_bar.dart';
 import 'vndb_icons.dart';
 
@@ -30,7 +31,9 @@ class VnCard extends ConsumerWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _Cover(url: vn.image?.displayUrl),
+              _Cover(
+                image: vn.image,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -88,12 +91,13 @@ class VnCard extends ConsumerWidget {
 }
 
 class _Cover extends StatelessWidget {
-  const _Cover({this.url});
-  final String? url;
+  const _Cover({this.image});
+  final ImageRef? image;
 
   @override
   Widget build(BuildContext context) {
-    if (url == null || url!.isEmpty) {
+    final url = image?.displayUrl;
+    if (url == null || url.isEmpty) {
       return Container(
         width: 56,
         height: 80,
@@ -103,17 +107,19 @@ class _Cover extends StatelessWidget {
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(4),
-      child: CachedNetworkImage(
-        imageUrl: url!,
+      child: NsfImage(
+        imageUrl: url,
+        sexual: image?.sexual,
+        violence: image?.violence,
         width: 56,
         height: 80,
         fit: BoxFit.cover,
-        placeholder: (_, __) => Container(
+        placeholder: Container(
           color: Theme.of(context).colorScheme.surface,
           width: 56,
           height: 80,
         ),
-        errorWidget: (_, __, ___) => Container(
+        errorWidget: Container(
           color: Theme.of(context).colorScheme.surface,
           width: 56,
           height: 80,

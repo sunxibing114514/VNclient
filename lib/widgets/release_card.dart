@@ -1,20 +1,36 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/models/release.dart';
+import '../core/providers/theme_provider.dart';
+import '../core/theme/title_resolver.dart';
+import 'nsf_image.dart';
 
 /// A compact card for a release entry, with an optional cover image.
-class ReleaseCard extends StatelessWidget {
+///
+/// The title follows the user's 日文/罗马音 display preference and the cover
+/// is blurred for sexual/violent images when the NSFW blur setting is on.
+class ReleaseCard extends ConsumerWidget {
   const ReleaseCard({super.key, required this.release, this.onTap});
 
   final Release release;
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final titleMode =
+        ref.watch(themeNotifierProvider.select((s) => s.titleDisplay));
+    final title = TitleResolver.resolveSimple(
+      release.title,
+      release.alttitle,
+      titleMode,
+    );
     final img = release.images.isNotEmpty
         ? (release.images.first.image?.thumbnail ??
             release.images.first.image?.url)
+        : null;
+    final imageRef = release.images.isNotEmpty
+        ? release.images.first.image
         : null;
 
     return Card(
@@ -30,14 +46,18 @@ class ReleaseCard extends StatelessWidget {
               SizedBox(
                 height: 90,
                 width: double.infinity,
-                child: CachedNetworkImage(
+                child: NsfImage(
                   imageUrl: img,
+                  sexual: imageRef?.sexual,
+                  violence: imageRef?.violence,
                   fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  placeholder: Container(
+                    color:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                   ),
-                  errorWidget: (_, __, ___) => Container(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  errorWidget: Container(
+                    color:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                     child: const Icon(Icons.album, size: 28),
                   ),
                 ),
@@ -47,7 +67,8 @@ class ReleaseCard extends StatelessWidget {
                 height: 90,
                 width: double.infinity,
                 child: Container(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  color:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
                   child: const Icon(Icons.album, size: 28),
                 ),
               ),
@@ -58,7 +79,7 @@ class ReleaseCard extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    release.title,
+                    title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(

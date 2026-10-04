@@ -2,7 +2,7 @@
 
 [English](./readme-en.md)
 
-## 部分代码由 AI 生成。
+## AI 项目。
 
 一款用于 [VNDB](https://vndb.org/)（Visual Novel Database，视觉小说数据库）的 Flutter 客户端，采用现代 Material Design 3 界面复刻网站功能。
 
