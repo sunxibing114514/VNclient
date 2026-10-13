@@ -9,6 +9,7 @@ import '../../core/providers/endpoints_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/services/browsing_history_service.dart';
 import '../../core/theme/title_resolver.dart';
+import '../../widgets/copyable_text.dart';
 import '../../widgets/nsf_image.dart';
 import '../../widgets/vndb_icons.dart';
 
@@ -293,8 +294,9 @@ class _HistoryTile extends ConsumerWidget {
                   color: Theme.of(context).colorScheme.surface,
                   child: const Icon(Icons.book),
                 ),
-          title: Text(
-            title,
+          title: CopyableText(
+            text: title,
+            vnId: vn.id,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontWeight: FontWeight.w600),

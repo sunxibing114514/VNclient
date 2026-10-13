@@ -1,17 +1,13 @@
 name: Build IPA
 
+# 手动触发构建 iOS IPA (未签名)。
+# 推送分支时不再自动触发, 以节省 macOS Actions 配额;
+# 如需构建请在 Actions 页面手动 Run workflow, 或推送 v* 标签。
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
-    paths:
-      - 'lib/**'
-      - 'pubspec.yaml'
-      - 'pubspec.lock'
-      - 'assets/**'
-      - '.github/workflows/build-ipa.yml'
-  pull_request:
-    branches: [main, master]
+    tags:
+      - 'v*'
 
 jobs:
   build-ipa:

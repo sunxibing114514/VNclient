@@ -13,6 +13,7 @@ import '../../core/providers/auth_provider.dart';
 import '../../core/providers/detail_providers.dart';
 import '../../core/providers/locale_provider.dart';
 import '../../core/providers/theme_provider.dart';
+import '../../core/services/download_settings_service.dart';
 import '../../core/services/update_checker.dart';
 import '../../core/theme/app_backgrounds.dart';
 
@@ -49,6 +50,66 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final pass = await _storage.read(key: 'vndb_web_pass') ?? '';
     _userController.text = user;
     _passController.text = pass;
+  }
+
+  /// 编辑 freem! 游戏下载的保存目录 (Android 专有)。
+  ///
+  /// 支持两种写法:
+  ///  - 相对名称 (默认 `VNclient`): 公共 Download 目录下的子文件夹,
+  ///    通过系统 MediaStore 写入, 无需任何存储权限;
+  ///  - 以 `/` 开头的绝对路径: 直接写入 (仅对应用可写的目录有效,
+  ///    如应用专属外部存储目录)。
+  Future<void> _editDownloadDir(BuildContext context, WidgetRef ref) async {
+    final current = ref.read(downloadSettingsProvider).directory;
+    final controller = TextEditingController(text: current);
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('下载保存目录'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: '目录名称或绝对路径',
+                hintText: 'VNclient',
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '· 相对名称: 保存到公共 Download 目录下的同名子文件夹\n'
+              '· 绝对路径 (以 / 开头): 直接写入该路径, 需为应用可写目录',
+              style: Theme.of(dialogContext).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await ref
+        .read(downloadSettingsProvider.notifier)
+        .setDirectory(controller.text);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          '下载目录已更新: ${ref.read(downloadSettingsProvider).isAbsolute ? ref.read(downloadSettingsProvider).directory : 'Download/${ref.read(downloadSettingsProvider).directory}'}',
+        ),
+      ),
+    );
   }
 
   /// 切换到另一个已保存的账户并刷新用户相关数据。
@@ -338,6 +399,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ),
           ),
           SwitchListTile(
+            secondary: const Icon(Icons.tag),
+            title: const Text('在标题后显示 v 编号'),
+            subtitle: const Text('在作品标题后附加数据库编号, 如 "标题 (v17)"'),
+            value: theme.showVnId,
+            onChanged: (v) => ref
+                .read(themeNotifierProvider.notifier)
+                .setShowVnId(v),
+          ),
+          SwitchListTile(
             secondary: const Icon(Icons.blur_on),
             title: const Text('模糊色情图片'),
             subtitle: const Text('默认对色情/暴力图片进行模糊处理'),
@@ -423,6 +493,23 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ],
             ),
           ),
+          // --- 游戏下载 (Android 专有: freem! 游戏下载目录) ---
+          if (Platform.isAndroid) ...[
+            const Divider(),
+            _SectionTitle('游戏下载'),
+            ListTile(
+              leading: const Icon(Icons.download),
+              title: const Text('下载保存目录'),
+              subtitle: Text(
+                ref.watch(downloadSettingsProvider).isAbsolute
+                    ? '自定义路径: ${ref.watch(downloadSettingsProvider).directory}'
+                    : '公共 Download 目录下的 ${ref.watch(downloadSettingsProvider).directory} 子文件夹',
+                style: const TextStyle(fontSize: 11),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _editDownloadDir(context, ref),
+            ),
+          ],
           const Divider(),
           _SectionTitle(l10n.tr('about')),
           ListTile(

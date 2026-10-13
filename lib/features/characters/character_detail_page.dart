@@ -8,6 +8,7 @@ import '../../core/providers/endpoints_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/theme/title_resolver.dart';
 import '../../widgets/async_value_widget.dart';
+import '../../widgets/copyable_text.dart';
 import '../../widgets/nsf_image.dart';
 import '../../widgets/section_header.dart';
 
@@ -69,6 +70,8 @@ class _CharacterBody extends ConsumerWidget {
                   width: 100,
                   height: 140,
                   fit: BoxFit.cover,
+                  // 100px 宽的头像, 限制解码宽度以省内存。
+                  cacheWidth: 200,
                   placeholder: Container(
                     width: 100,
                     height: 140,
@@ -94,7 +97,8 @@ class _CharacterBody extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(name,
+                  CopyableText(
+                      text: name,
                       style: Theme.of(context).textTheme.titleLarge),
                   if (secondary != null)
                     Text(secondary,

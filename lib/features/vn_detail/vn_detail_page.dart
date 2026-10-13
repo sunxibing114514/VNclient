@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/release.dart';
 import '../../core/models/character.dart';
+import '../../core/models/ext_link.dart';
 import '../../core/models/vn.dart';
 import '../../core/i18n/vndb_zh.dart';
 import '../../core/services/translation_service.dart';
@@ -17,11 +18,16 @@ import '../../core/providers/locale_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/router/app_router.dart';
 import '../../core/services/browsing_history_service.dart';
+import '../../core/services/game_download_service.dart';
 import '../../core/theme/title_resolver.dart';
 import '../../widgets/async_value_widget.dart';
+import '../../widgets/bbcode_link_text.dart';
+import '../../widgets/copyable_text.dart';
+import '../../widgets/image_viewer_page.dart';
 import '../../widgets/nsf_image.dart';
 import '../../widgets/section_header.dart';
 import '../../widgets/vndb_icons.dart';
+import '../releases/game_download_sheet.dart';
 import 'list_edit_dialog.dart';
 import 'vote_dialog.dart';
 
@@ -142,28 +148,43 @@ class _VnDetailViewState extends ConsumerState<_VnDetailView>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Cover with rounded corners + shadow
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.4),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: SizedBox(
-                      width: 120,
-                      height: 170,
-                      child: nsfImageFromRef(
-                        vn.image,
-                        fit: BoxFit.cover,
-                        placeholder: Container(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                          child: const Icon(Icons.book, size: 40),
+                GestureDetector(
+                  onTap: () {
+                    final url = vn.image?.url;
+                    if (url != null && url.isNotEmpty) {
+                      Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => ImageViewerPage(
+                          url: url,
+                          title: displayTitle,
+                        ),
+                      ));
+                    }
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.4),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: SizedBox(
+                        width: 120,
+                        height: 170,
+                        child: nsfImageFromRef(
+                          vn.image,
+                          fit: BoxFit.cover,
+                          placeholder: Container(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
+                            child: const Icon(Icons.book, size: 40),
+                          ),
                         ),
                       ),
                     ),
@@ -175,8 +196,9 @@ class _VnDetailViewState extends ConsumerState<_VnDetailView>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        displayTitle,
+                      CopyableText(
+                        text: displayTitle,
+                        vnId: vn.id,
                         style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -265,6 +287,7 @@ class _VnDetailViewState extends ConsumerState<_VnDetailView>
                   value: vn.lengthMinutes != null
                       ? '${(vn.lengthMinutes! / 60).toStringAsFixed(1)}h'
                       : vn.lengthLabel,
+                  onTap: () => _showLengthInfo(context, vn),
                 ),
               ],
             ),
@@ -319,6 +342,73 @@ class _VnDetailViewState extends ConsumerState<_VnDetailView>
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('已复制链接: $url'), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  /// 时长统计详情。
+  ///
+  /// VNDB 网站支持用户为作品投票游玩时长 (play time votes), 但 Kana API
+  /// (api-kana.md) 目前只提供时长的读取字段 (`length` / `length_minutes` /
+  /// `length_votes`) 与用户时长统计 (`GET /user` 的 `lengthvotes`), 没有
+  /// 提交时长投票的接口, 因此客户端内在下方提供网页版投票入口。
+  void _showLengthInfo(BuildContext context, Vn vn) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('时长统计'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _lengthRow('官方标注', vn.lengthLabel),
+            _lengthRow(
+              '平均游玩时长',
+              vn.lengthMinutes != null
+                  ? '${(vn.lengthMinutes! / 60).toStringAsFixed(1)} 小时'
+                  : '暂无数据',
+            ),
+            _lengthRow('时长投票', '${vn.lengthVotes ?? 0} 票'),
+            const SizedBox(height: 12),
+            Text(
+              '可在 VNDB 网页版查看全部时长投票, 登录后可提交自己的游玩时长投票。',
+              style: Theme.of(dialogContext).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('关闭'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.how_to_vote, size: 18),
+            label: const Text('网页版投票'),
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              openWebView(
+                context,
+                'https://vndb.org/${vn.id}/lengthvotes',
+                title: '时长投票',
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _lengthRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(label, style: Theme.of(context).textTheme.bodySmall),
+          ),
+          Expanded(child: Text(value)),
+        ],
+      ),
     );
   }
 
@@ -530,7 +620,15 @@ class _OverviewTab extends ConsumerWidget {
                 final shot = vn.screenshots[i];
                 final url = shot.image?.url ?? shot.image?.thumbnail;
                 return GestureDetector(
-                  onTap: () => _showFullScreen(context, url),
+                  onTap: () {
+                    if (url == null || url.isEmpty) return;
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => ImageViewerPage(
+                        url: url,
+                        title: vn.title,
+                      ),
+                    ));
+                  },
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: SizedBox(
@@ -574,34 +672,42 @@ class _OverviewTab extends ConsumerWidget {
               icon: Icons.link_outlined,
               padding: EdgeInsets.zero),
           for (final link in vn.extlinks)
-            ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: Text(link.label),
-              trailing: const Icon(Icons.open_in_new, size: 18),
-              onTap: () => openWebView(context, link.url, title: link.label),
-            ),
+            _extlinkTile(context, ref, link),
         ],
         const SizedBox(height: 16),
       ],
     );
   }
 
-  void _showFullScreen(BuildContext context, String? url) {
-    if (url == null) return;
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => Scaffold(
-        backgroundColor: Colors.black,
-        body: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Center(
-            child: InteractiveViewer(
-              child: CachedNetworkImage(imageUrl: url),
+  /// 单条外部链接: 可解析为游戏下载的站点 (freem!/NovelGame/Vector/直链)
+  /// 显示下载提示并点击弹出下载面板; 长按可复制链接。
+  Widget _extlinkTile(BuildContext context, WidgetRef ref, ExtLink link) {
+    final source =
+        GameDownloadService.detectSource(link.url, name: link.name);
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(link.label),
+      subtitle: source == null
+          ? null
+          : Text(
+              '${GameDownloadService.sourceLabel(source)} 免费游戏 · 点击可下载',
+              style: const TextStyle(fontSize: 11),
             ),
-          ),
-        ),
+      trailing: Icon(
+        source == null ? Icons.open_in_new : Icons.download,
+        size: 18,
       ),
-    ));
+      onTap: () => handleGameLinkTap(
+        context,
+        ref,
+        link.url,
+        label: link.label,
+        name: link.name,
+      ),
+      // 长按复制链接。
+      onLongPress: () => copyLinkToClipboard(context, link.url),
+    );
   }
 }
 
@@ -766,6 +872,37 @@ class _DescriptionSectionState extends ConsumerState<_DescriptionSection> {
     }
   }
 
+  /// Switches a community human translation to machine translation.
+  /// Invoked from the "点击此处使用机器翻译" link shown after "来自社区翻译".
+  Future<void> _useMachineTranslation() async {
+    final desc = widget.description;
+    if (desc == null || desc.isEmpty) return;
+    setState(() {
+      _translating = true;
+      _error = null;
+    });
+    try {
+      final machine = await _translator.translate(
+        desc,
+        sourceLang: 'en',
+        targetLang: 'zh',
+      );
+      if (!mounted) return;
+      setState(() {
+        _translated = machine;
+        _humanTranslated = false;
+        _translating = false;
+        _showTranslated = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _translating = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final desc = widget.description ?? '暂无简介';
@@ -824,20 +961,39 @@ class _DescriptionSectionState extends ConsumerState<_DescriptionSection> {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 8),
-            Text(
-              _humanTranslated
-                  ? '— 来自社区翻译'
-                  : '— 由 MyMemory API 机器翻译',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontStyle: FontStyle.italic,
-                    color: _humanTranslated
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  _humanTranslated
+                      ? '— 来自社区翻译'
+                      : '— 由 MyMemory API 机器翻译',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontStyle: FontStyle.italic,
+                        color: _humanTranslated
+                            ? Theme.of(context).colorScheme.primary
+                            : null,
+                      ),
+                ),
+                if (_humanTranslated && !_translating)
+                  GestureDetector(
+                    onTap: _useMachineTranslation,
+                    child: Text(
+                      ' · 点击此处使用机器翻译',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontStyle: FontStyle.italic,
+                            color: Theme.of(context).colorScheme.primary,
+                            decoration: TextDecoration.underline,
+                          ),
+                    ),
                   ),
+              ],
             ),
           ] else
-            SelectableText(
-              desc,
+            // 简介原文按 BBCode 返回, 其中常含 [url=…] 链接 (官网/下载页):
+            // 点击可打开或下载 (可解析站点弹下载面板), 长按链接可复制。
+            BbcodeLinkText(
+              text: desc,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           if (_error != null) ...[
@@ -1092,6 +1248,10 @@ class _CharacterTile extends ConsumerWidget {
                       character.image,
                       fit: BoxFit.cover,
                       height: 160,
+                      // 140px-wide grid tiles: a decode width of 300
+                      // keeps the memory cache small on long character
+                      // grids without any visible quality change.
+                      cacheWidth: 300,
                       placeholder: Container(
                         height: 160,
                         color: Theme.of(context).colorScheme.surfaceContainerHighest,

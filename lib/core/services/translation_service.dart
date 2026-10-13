@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 
 /// The result of a VN description translation attempt.
@@ -19,13 +21,18 @@ class DescriptionTranslation {
 }
 
 /// A client for the community human-translation mirror of VN descriptions:
-/// `https://vndbtran.hjymoon.bbroot.com/000001.json`.
+/// `https://vndbtran.hjymoon.bbroot.com/?v=17`.
 ///
-/// The mirror stores 500 VNs per JSON shard. Each shard is a JSON array of
-/// entries shaped like `{"v": "<vn id>", "translate": "<Chinese description>"}`.
-/// Shard files are zero-padded to 6 digits; a VN with numeric id `n` lives in
-/// shard `((n - 1) ~/ 500) + 1`. Missing shards (HTTP 404) and misses are
-/// cached so repeated lookups are cheap.
+/// 社区翻译通过镜像站的 `?v=<编号>` 查询接口获取:
+///  - 主请求 `GET /?v=17`, 接口返回纯文本: 命中为译文正文, 未命中为
+///    `错误：...` 文本 (其 `&mode=json` 变体返回同样的数据, 此处同样支持)。
+///  - 兼容回退: 镜像站当前为纯静态托管, 对 `?v=x` 返回的是 HTML 查询页,
+///    纯文本由页面 JS 在浏览器端渲染。此时使用该页面对 `?v=x` 的同一取数
+///    方法 (编号寻址): 编号 n 位于第 `((n - 1) ~/ 500) + 1` 个分片文件
+///    `000NNN.json` (每片 500 条, 条目形如 `{"v":"17","translate":"..."}`),
+///    拉取该分片并取出对应编号的条目, 与页面查询结果一致。
+///
+/// 命中与未命中均缓存, 重复查询开销很小。
 class VndbtranService {
   VndbtranService()
       : _dio = Dio(
@@ -39,7 +46,7 @@ class VndbtranService {
 
   final Dio _dio;
 
-  /// Number of VNs stored per JSON shard.
+  /// Number of VNs stored per JSON shard (编号寻址, used by the fallback).
   static const int perShard = 500;
 
   /// shard index -> parsed entries (keyed by numeric VN id), or null when the
@@ -49,39 +56,126 @@ class VndbtranService {
   /// vn id (e.g. "v17") -> cached hit translation.
   final Map<String, String> _hitCache = {};
 
+  /// vn ids with a confirmed miss (the mirror has no translation for them).
+  final Set<String> _missCache = {};
+
   int? _vnNumber(String vnId) {
     final trimmed = vnId.trim();
     if (!trimmed.startsWith('v')) return null;
     return int.tryParse(trimmed.substring(1));
   }
 
-  /// Looks up the community human translation for [vnId].
-  /// Returns null when the VN is not present in the mirror.
+  /// Looks up the community human translation for [vnId] through the
+  /// mirror's `?v=x` query interface.
+  ///
+  /// Returns null when the VN is not present in the mirror (or the mirror
+  /// is unreachable).
   Future<String?> lookup(String vnId) async {
     final n = _vnNumber(vnId);
     if (n == null) return null;
 
     final cachedHit = _hitCache[vnId];
     if (cachedHit != null) return cachedHit;
+    if (_missCache.contains(vnId)) return null;
 
+    // Primary: the mirror's plain-text query interface, e.g. /?v=17.
+    final viaInterface = await _queryInterface(n);
+    if (viaInterface != null) {
+      if (viaInterface.isEmpty) {
+        _missCache.add(vnId); // confirmed miss
+        return null;
+      }
+      _hitCache[vnId] = viaInterface;
+      return viaInterface;
+    }
+
+    // Fallback: the static mirror answers /?v=x with its HTML query page
+    // (the plain text is rendered by the page's own script in a browser),
+    // so use the exact method that page uses for a `?v=x` query: the
+    // 编号寻址 shard-file lookup.
+    final viaShard = await _lookupViaShardFile(n);
+    if (viaShard == null) {
+      // Mirror unreachable — don't cache, the next lookup can retry.
+      return null;
+    }
+    if (viaShard.isEmpty) {
+      _missCache.add(vnId); // confirmed miss
+      return null;
+    }
+    _hitCache[vnId] = viaShard;
+    return viaShard;
+  }
+
+  /// Queries the `?v=<n>` plain-text interface.
+  ///
+  /// The interface answers in plain text: the translation itself on a hit,
+  /// or an `错误：...` message on a miss. (Its `&mode=json` variant wraps
+  /// the same data as JSON — that shape is understood here too.)
+  ///
+  /// Returns the translation on a hit, an empty string on a confirmed miss,
+  /// and null when the interface could not be used (e.g. the static mirror
+  /// answered with its HTML page, or the request failed).
+  Future<String?> _queryInterface(int n) async {
+    try {
+      final response = await _dio.get<String>(
+        '/',
+        queryParameters: {'v': n.toString()},
+        options: Options(responseType: ResponseType.plain),
+      );
+      final body = (response.data ?? '').trim();
+      // Plain-text interface: an empty answer is a miss.
+      if (body.isEmpty) return '';
+      final head = body.length <= 16
+          ? body.toLowerCase()
+          : body.substring(0, 16).toLowerCase();
+      if (head.startsWith('<!doctype') || head.startsWith('<html')) {
+        // The static mirror returned its HTML query page — the plain text
+        // is rendered client-side by the page's own script in a browser.
+        return null;
+      }
+      if (body.startsWith('错误：') || body.startsWith('错误:')) {
+        // The interface's documented error output — a miss.
+        return '';
+      }
+      if (body.startsWith('{') || body.startsWith('[')) {
+        // Defensive: also understand the &mode=json answer shape
+        // ({"v": ..., "translate": ...} / {"v": ..., "error": ...}).
+        final data = jsonDecode(body);
+        if (data is! Map<String, dynamic>) return null;
+        if (data.containsKey('error')) return '';
+        final translate = data['translate']?.toString();
+        if (translate == null || translate.trim().isEmpty) return '';
+        return translate;
+      }
+      // Plain text: the translation itself (the `?v=x` output).
+      return body;
+    } on DioException {
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 编号寻址 shard-file lookup — the method the mirror's own page uses to
+  /// answer a `?v=x` query. A VN with numeric id `n` lives in shard
+  /// `((n - 1) ~/ 500) + 1`, stored as a zero-padded `000NNN.json` file.
+  ///
+  /// Returns the translation on a hit, an empty string on a confirmed miss,
+  /// and null when the shard could not be fetched.
+  Future<String?> _lookupViaShardFile(int n) async {
     final shard = ((n - 1) ~/ perShard) + 1;
-    final shardFile =
-        shard.toString().padLeft(6, '0');
 
     Map<String, String>? shardMap;
     if (_shardCache.containsKey(shard)) {
       shardMap = _shardCache[shard];
     } else {
-      shardMap = await _downloadShard(shardFile);
+      shardMap = await _downloadShard(shard.toString().padLeft(6, '0'));
       _shardCache[shard] = shardMap;
     }
-
-    final hit = shardMap?[n.toString()];
-    if (hit != null && hit.trim().isNotEmpty) {
-      _hitCache[vnId] = hit;
-      return hit;
-    }
-    return null;
+    if (shardMap == null) return null;
+    final hit = shardMap[n.toString()];
+    if (hit == null || hit.trim().isEmpty) return '';
+    return hit;
   }
 
   Future<Map<String, String>?> _downloadShard(String shardFile) async {

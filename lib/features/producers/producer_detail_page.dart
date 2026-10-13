@@ -7,8 +7,10 @@ import '../../core/models/vn.dart';
 import '../../core/providers/endpoints_provider.dart';
 import '../../core/services/follow_service.dart';
 import '../../widgets/async_value_widget.dart';
+import '../../widgets/copyable_text.dart';
 import '../../widgets/section_header.dart';
 import '../../widgets/vn_card.dart';
+import '../releases/game_download_sheet.dart';
 
 final _producerProvider =
     FutureProvider.autoDispose.family<Producer, String>((ref, id) {
@@ -46,7 +48,8 @@ class _ProducerBody extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        Text(producer.name, style: Theme.of(context).textTheme.titleLarge),
+        CopyableText(
+            text: producer.name, style: Theme.of(context).textTheme.titleLarge),
         if (producer.original != null)
           Text(producer.original!, style: Theme.of(context).textTheme.bodyMedium),
         const SizedBox(height: 8),
@@ -107,6 +110,8 @@ class _ProducerBody extends ConsumerWidget {
               trailing: const Icon(Icons.open_in_new, size: 18),
               onTap: () => context.push(
                   '/webview?url=${Uri.encodeComponent(link.url)}&title=${Uri.encodeComponent(link.label)}'),
+              // 长按复制链接。
+              onLongPress: () => copyLinkToClipboard(context, link.url),
             ),
         ],
         const SizedBox(height: 24),

@@ -27,6 +27,7 @@ import '../../features/tags/tag_detail_page.dart';
 import '../../features/tags/tag_list_page.dart';
 import '../../features/traits/trait_detail_page.dart';
 import '../../features/traits/trait_list_page.dart';
+import '../../features/users/user_profile_page.dart';
 import '../../features/users/user_search_page.dart';
 import '../../features/vn_detail/vn_detail_page.dart';
 import '../../features/webview/webview_page.dart';
@@ -49,16 +50,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: '/home',
     redirect: (context, state) {
       final loggedIn = auth.isAuthenticated;
-      final goingToLogin = state.matchedLocation == '/login';
       final isProtected =
           _protectedPrefixes.any((p) => state.matchedLocation.startsWith(p));
 
       if (isProtected && !loggedIn) {
         return '/login?from=${state.matchedLocation}';
       }
-      if (goingToLogin && loggedIn) {
-        return '/home';
-      }
+      // NOTE: /login is intentionally reachable while logged in so the
+      // user can add another account from the settings page (multi-account
+      // support). Do NOT redirect it back to /home.
       return null;
     },
     routes: [
@@ -180,9 +180,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/user/:id',
-        builder: (context, state) => ProfilePage(
-          userId: state.pathParameters['id'],
+        builder: (context, state) => UserProfilePage(
+          userId: state.pathParameters['id']!,
         ),
+        routes: [
+          GoRoute(
+            path: 'list',
+            builder: (context, state) => UserListPage(
+              userId: state.pathParameters['id'],
+              initialTab: state.uri.queryParameters['tab'],
+            ),
+          ),
+        ],
       ),
       GoRoute(
         path: '/settings',
@@ -229,9 +238,4 @@ void openWebView(BuildContext context, String url, {String? title}) {
   final encoded = Uri.encodeComponent(url);
   final t = title == null ? '' : '&title=${Uri.encodeComponent(title)}';
   context.push('/webview?url=$encoded$t');
-}
-
-/// Convenience helper for opening a user profile webview.
-void openUserProfile(BuildContext context, String userId) {
-  openWebView(context, 'https://vndb.org/$userId', title: 'User');
 }

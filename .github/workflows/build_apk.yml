@@ -1,45 +1,41 @@
-name: 构建 APK (v7a / v8a / x86-64) + 源码 zip
+name: 构建 APK 与源码包 (x86_64 / v8a / v7a)
 
 # 触发条件:
-#   1. 推送 v* 形式的 tag
-#   2. 手动在工作流页面触发
+#   1. 推送到 main 分支 — 产出 源码 zip + 三个 APK 工作流产物
+#   2. 推送 v* 形式的 tag — 在上述产物基础上发布 GitHub Release
+#   3. 手动在工作流页面触发
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
 
 env:
   # 不固定具体版本,使用最新 stable:
-  # 项目 Gradle 配置(wrapper 9.1 + AGP 9.0.1)要求较新的 Flutter 工具链,
+  # 项目 Gradle 配置(wrapper 8.14.3 + AGP 8.11.1)要求较新的 Flutter 工具链,
   # Flutter 3.29.x 的 flutter_tools/groovy 与 Gradle 9 不兼容
   # (groovy.xml.QName 在 Gradle 9 内置 Groovy 4 中已移除)。
   FLUTTER_CHANNEL: 'stable'
   JAVA_VERSION: '17'
-  NDK_VERSION: '26.3.11579264'
-  APP_VERSION: '1.3.6'
 
 jobs:
   build:
-    name: 构建 ${{ matrix.abi }}
+    name: 构建 APK 与源码 zip
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - abi: armeabi-v7a
-            target-platform: android-arm
-            artifact-name: VNclient-v1.3.6-android-armeabi-v7a.apk
-          - abi: arm64-v8a
-            target-platform: android-arm64
-            artifact-name: VNclient-v1.3.6-android-arm64-v8a.apk
-          - abi: x86-64
-            target-platform: android-x64
-            artifact-name: VNclient-v1.3.6-android-x86-64.apk
-
+    timeout-minutes: 60
     steps:
       - name: 拉取仓库代码
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 读取版本号
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | head -1 | awk '{print $2}' | cut -d'+' -f1)
+          echo "版本号: $VERSION"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: 配置 JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
@@ -63,7 +59,7 @@ jobs:
           restore-keys: |
             gradle-${{ runner.os }}-
 
-      # 说明: NDK 不再预装固定版本。Flutter 各版本通过 flutter.ndkVersion
+      # 说明: NDK 不预装固定版本。Flutter 各版本通过 flutter.ndkVersion
       # 声明其所需 NDK,Gradle 会在许可已接受的 Runner 上自动下载对应版本,
       # 避免预装版本与 Flutter 要求不一致。
       - name: 缓存 Android NDK
@@ -85,100 +81,87 @@ jobs:
       - name: 静态分析 (允许失败, 仅提示)
         run: flutter analyze || true
 
-      - name: 构建 ${{ matrix.abi }} Release APK
+      # 一次编译同时产出三个 ABI 的 APK (--split-per-abi),
+      # 相比按矩阵构建三次节省约 2/3 的 CI 时间。
+      # 体积优化:
+      #   - 图标摇树优化 (默认开启, 不再传 --no-tree-shake-icons)
+      #   - R8 代码压缩 + 资源压缩 (android/app/build.gradle release 配置)
+      #   - --split-debug-info 分离调试符号
+      - name: 构建 Release APK (三个 ABI)
         run: |
           flutter build apk \
             --release \
-            --target-platform ${{ matrix.target-platform }} \
             --split-per-abi \
-            --no-tree-shake-icons
+            --obfuscate \
+            --split-debug-info=build/symbols
 
-      - name: 重命名 APK 输出
+      - name: 整理并重命名 APK
         run: |
           set -euo pipefail
           mkdir -p output
-          # 注意: --split-per-abi 的输出文件名中 x86_64 带下划线,
+          # --split-per-abi 的输出文件名中 x86_64 带下划线,
           # 其余 ABI (armeabi-v7a / arm64-v8a) 使用原样名称。
-          SRC="build/app/outputs/flutter-apk/app-${{ matrix.abi == 'x86-64' && 'x86_64' || matrix.abi }}-release.apk"
-          if [ ! -f "$SRC" ]; then
-            echo "::error::未找到构建产物 $SRC"
-            ls -la build/app/outputs/flutter-apk/ || true
-            exit 1
-          fi
-          cp "$SRC" "output/${{ matrix.artifact-name }}"
+          for pair in \
+            "armeabi-v7a:VNclient-v${VERSION}-android-armeabi-v7a.apk" \
+            "arm64-v8a:VNclient-v${VERSION}-android-arm64-v8a.apk" \
+            "x86_64:VNclient-v${VERSION}-android-x86-64.apk"; do
+            ABI="${pair%%:*}"
+            DEST="${pair##*:}"
+            SRC="build/app/outputs/flutter-apk/app-${ABI}-release.apk"
+            if [ ! -f "$SRC" ]; then
+              echo "::error::未找到构建产物 $SRC"
+              ls -la build/app/outputs/flutter-apk/ || true
+              exit 1
+            fi
+            cp "$SRC" "output/$DEST"
+            ls -la "output/$DEST"
+          done
           ls -la output/
 
-      - name: 上传 APK 到工作流产物
+      - name: 打包源码 zip
+        run: |
+          set -euo pipefail
+          git archive --format=zip \
+            --prefix="vnclientt4-v${VERSION}/" \
+            -o "output/VNclient-v${VERSION}-source.zip" HEAD
+          unzip -l "output/VNclient-v${VERSION}-source.zip" | head -5
+          echo "源码条目数: $(unzip -l output/VNclient-v${VERSION}-source.zip | tail -1)"
+
+      - name: 上传 x86-64 APK
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact-name }}
-          path: output/${{ matrix.artifact-name }}
+          name: VNclient-v${{ env.VERSION }}-android-x86-64.apk
+          path: output/VNclient-v${{ env.VERSION }}-android-x86-64.apk
           if-no-files-found: error
           retention-days: 30
 
-  bundle-apks:
-    name: 打包三个 APK 到 zip
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: 下载所有 APK 产物
-        uses: actions/download-artifact@v4
-        with:
-          path: apks
-          merge-multiple: false
-
-      - name: 整理 APK 并打包到 zip
-        run: |
-          set -euo pipefail
-          mkdir -p staging
-          find apks -type f -name '*.apk' -exec cp {} staging/ \;
-          ls -la staging/
-          cd staging
-          zip -j "../VNclient-v1.3.6-android-apks.zip" \
-            VNclient-v1.3.6-android-armeabi-v7a.apk \
-            VNclient-v1.3.6-android-arm64-v8a.apk \
-            VNclient-v1.3.6-android-x86-64.apk
-          cd ..
-          ls -la VNclient-v1.3.6-android-apks.zip
-          unzip -l VNclient-v1.3.6-android-apks.zip
-
-      - name: 上传 APK 合并 zip 到工作流产物
+      - name: 上传 arm64-v8a APK
         uses: actions/upload-artifact@v4
         with:
-          name: VNclient-v1.3.6-android-apks
-          path: VNclient-v1.3.6-android-apks.zip
+          name: VNclient-v${{ env.VERSION }}-android-arm64-v8a.apk
+          path: output/VNclient-v${{ env.VERSION }}-android-arm64-v8a.apk
           if-no-files-found: error
           retention-days: 30
 
-  source-zip:
-    name: 生成源码 zip
-    runs-on: ubuntu-latest
-    steps:
-      - name: 拉取仓库代码
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: 打包源码 zip (排除构建产物与缓存)
-        run: |
-          set -euo pipefail
-          mkdir -p output
-          git archive --format=zip --prefix=VNclient-v1.3.6-src/ -o output/VNclient-v1.3.6-src.zip HEAD
-          cp CHANGELOG.md output/CHANGELOG.md || true
-          ls -la output/
-          unzip -l output/VNclient-v1.3.6-src.zip | head -20
-
-      - name: 上传源码 zip 到工作流产物
+      - name: 上传 armeabi-v7a APK
         uses: actions/upload-artifact@v4
         with:
-          name: VNclient-v1.3.6-src
-          path: output/VNclient-v1.3.6-src.zip
+          name: VNclient-v${{ env.VERSION }}-android-armeabi-v7a.apk
+          path: output/VNclient-v${{ env.VERSION }}-android-armeabi-v7a.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 上传源码 zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: VNclient-v${{ env.VERSION }}-source
+          path: output/VNclient-v${{ env.VERSION }}-source.zip
           if-no-files-found: error
           retention-days: 30
 
   release:
-    name: 发布 Release
-    needs: [bundle-apks, source-zip]
+    name: 发布 GitHub Release
+    needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:

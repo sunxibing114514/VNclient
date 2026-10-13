@@ -9,9 +9,13 @@ class AppConstants {
   static const String siteBaseUrl = 'https://vndb.org';
 
   /// Current app version (keep in sync with pubspec.yaml).
-  static const String appVersion = '1.3.6';
+  static const String appVersion = '1.4.0';
 
   /// GitHub releases API endpoint for update checking.
+  ///
+  /// Points at the public VNclient mirror so the check works without any
+  /// authentication (the development repo is private and would 404, making
+  /// the app bounce "尚未发布任何 Release" on every tap).
   static const String githubReleasesApi =
       'https://api.github.com/repos/sunxibing114514/VNclient/releases/latest';
 
@@ -27,6 +31,11 @@ class AppConstants {
   /// Secure storage key for the remembered-accounts JSON list
   /// (multi-account login support).
   static const String accountsKey = 'vndb_accounts';
+
+  /// SharedPreferences key for the game download directory
+  /// (freem! downloads, Android only). Either a subfolder name of the
+  /// public Download directory (e.g. "VNclient") or an absolute path.
+  static const String downloadDirKey = 'vndb_download_dir';
 
   /// Default page size for paginated queries.
   static const int defaultPageSize = 20;
@@ -65,6 +74,9 @@ class AppLinks {
 
   static const String patreon = 'https://www.patreon.com/vndb';
   static const String subscribestar = 'https://subscribestar.adult/vndb';
+  /// The public repository of this client. All in-app GitHub links point
+  /// here (the development repository is private and 404s for everyone
+  /// else).
   static const String github = 'https://github.com/sunxibing114514/VNclient';
 
   static const String recentChanges = 'https://vndb.org/t/ge';
@@ -81,6 +93,13 @@ class AppLinks {
   static const String addStaff = 'https://vndb.org/s/add';
   static const String tokens = 'https://vndb.org/u/tokens';
   static const String privacy = 'https://vndb.org/d7';
+
+  /// Community human-translation project for VN descriptions.
+  static const String translationProject =
+      'https://github.com/sunxibing114514/translate-vndb-description';
+
+  /// Online query mirror of the community translations.
+  static const String translationMirror = 'https://vndbtran.hjymoon.bbroot.com/';
 
   /// Latest release HTML page (for "view on GitHub" button).
   static const String latestReleaseUrl =

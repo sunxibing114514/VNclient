@@ -10,6 +10,7 @@ import '../../core/models/vn.dart';
 import '../../core/providers/endpoints_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/theme/title_resolver.dart';
+import '../../widgets/copyable_text.dart';
 import '../../widgets/nsf_image.dart';
 import '../../widgets/vn_card.dart';
 
@@ -120,7 +121,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     _DropdownOption(label: 'Nintendo 3DS', value: 'n3ds'),
     _DropdownOption(label: 'Wii', value: 'wii'),
     _DropdownOption(label: 'Wii U', value: 'wiu'),
-    _DropdownOption(label: 'Xbox 360', value: 'x360'),
+    _DropdownOption(label: 'Xbox 360', value: 'xb3'),
     _DropdownOption(label: 'Xbox One', value: 'xbo'),
     _DropdownOption(label: 'Web', value: 'web'),
     _DropdownOption(label: 'Other', value: 'oth'),
@@ -1185,7 +1186,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 }
 
 /// A generic list tile used for non-VN search results.
-class _GenericResultTile extends StatelessWidget {
+class _GenericResultTile extends ConsumerWidget {
   const _GenericResultTile({
     this.leading,
     required this.title,
@@ -1199,7 +1200,7 @@ class _GenericResultTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Card(
       child: ListTile(
         contentPadding: const EdgeInsets.all(8),
@@ -1209,8 +1210,8 @@ class _GenericResultTile extends StatelessWidget {
               child: Icon(Icons.tag,
                   color: Theme.of(context).colorScheme.primary),
             ),
-        title: Text(
-          title,
+        title: CopyableText(
+          text: title,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontWeight: FontWeight.w600),

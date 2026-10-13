@@ -6,6 +6,7 @@ import '../../core/api/endpoints/character_endpoint.dart';
 import '../../core/providers/endpoints_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/theme/title_resolver.dart';
+import '../../widgets/copyable_text.dart';
 import '../../widgets/nsf_image.dart';
 
 /// A searchable, paginated list of all characters with advanced filtering.
@@ -613,8 +614,8 @@ class _CharacterListPageState extends ConsumerState<CharacterListPage> {
                       color: Theme.of(context).colorScheme.surface,
                       child: const Icon(Icons.person),
                     ),
-              title: Text(
-                TitleResolver.resolvePair(c.name, c.original, titleMode),
+              title: CopyableText(
+                text: TitleResolver.resolvePair(c.name, c.original, titleMode),
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               subtitle: Text(

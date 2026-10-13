@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_constants.dart';
@@ -34,8 +35,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Token 无效或网络错误')),
       );
+      return;
     }
-    // On success the auth state changes and the router redirects automatically.
+    // Login succeeded. When this page was pushed on top of an existing
+    // session (e.g. "添加账户" from the settings page), pop back so the
+    // user sees the account they just added; otherwise go home.
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/home');
+    }
   }
 
   @override
@@ -127,7 +136,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             ),
             const SizedBox(height: 8),
             OutlinedButton(
-              onPressed: () => Navigator.of(context).maybePop(),
+              onPressed: () {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go('/home');
+                }
+              },
               child: const Text('以游客身份继续'),
             ),
           ],

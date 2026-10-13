@@ -5,6 +5,7 @@ import '../core/models/image_ref.dart';
 import '../core/models/vn.dart';
 import '../core/providers/theme_provider.dart';
 import '../core/theme/title_resolver.dart';
+import 'copyable_text.dart';
 import 'nsf_image.dart';
 import 'rating_bar.dart';
 import 'vndb_icons.dart';
@@ -39,8 +40,9 @@ class VnCard extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
+                    CopyableText(
+                      text: title,
+                      vnId: vn.id,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -114,6 +116,9 @@ class _Cover extends StatelessWidget {
         width: 56,
         height: 80,
         fit: BoxFit.cover,
+        // 56px cover thumbnails: decode at ~150px for a much smaller
+        // memory footprint in long search/list results.
+        cacheWidth: 150,
         placeholder: Container(
           color: Theme.of(context).colorScheme.surface,
           width: 56,

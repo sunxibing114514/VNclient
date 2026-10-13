@@ -2,12 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/models/ext_link.dart';
 import '../../core/models/release.dart';
 import '../../core/providers/endpoints_provider.dart';
 import '../../core/providers/theme_provider.dart';
+import '../../core/services/game_download_service.dart';
 import '../../core/theme/title_resolver.dart';
 import '../../widgets/async_value_widget.dart';
+import '../../widgets/bbcode_link_text.dart';
+import '../../widgets/copyable_text.dart';
 import '../../widgets/section_header.dart';
+import 'game_download_sheet.dart';
 
 final _releaseProvider =
     FutureProvider.autoDispose.family<Release, String>((ref, id) {
@@ -54,7 +59,8 @@ class _ReleaseBody extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        Text(primaryTitle, style: Theme.of(context).textTheme.titleLarge),
+        CopyableText(
+            text: primaryTitle, style: Theme.of(context).textTheme.titleLarge),
         if (release.alttitle != null &&
             release.alttitle!.isNotEmpty &&
             secondaryTitle != primaryTitle) ...[
@@ -97,7 +103,12 @@ class _ReleaseBody extends ConsumerWidget {
         if (release.notes != null) ...[
           const SizedBox(height: 12),
           const SectionHeader(title: '备注', icon: Icons.notes, padding: EdgeInsets.zero),
-          Text(release.notes!),
+          // 备注按 BBCode 返回, 其中常含可下载链接 (如 v14244 的 Vector
+          // 下载页链接): 链接可点击 (可下载站点弹出下载面板), 长按可复制。
+          BbcodeLinkText(
+            text: release.notes!,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
         ],
         if (release.languages.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -150,13 +161,42 @@ class _ReleaseBody extends ConsumerWidget {
               dense: true,
               contentPadding: EdgeInsets.zero,
               title: Text(link.label),
-              trailing: const Icon(Icons.open_in_new, size: 18),
-              onTap: () => context.push(
-                  '/webview?url=${Uri.encodeComponent(link.url)}&title=${Uri.encodeComponent(link.label)}'),
+              subtitle: _extlinkSubtitle(link),
+              trailing: Icon(
+                _extlinkDownloadable(link)
+                    ? Icons.download
+                    : Icons.open_in_new,
+                size: 18,
+              ),
+              onTap: () => handleGameLinkTap(
+                context,
+                ref,
+                link.url,
+                label: link.label,
+                name: link.name,
+              ),
+              // 长按复制链接。
+              onLongPress: () => copyLinkToClipboard(context, link.url),
             ),
         ],
         const SizedBox(height: 24),
       ],
+    );
+  }
+
+  /// Whether an extlink can be resolved to a direct game file
+  /// (freem! / NovelGame / Vector / 直链归档).
+  bool _extlinkDownloadable(ExtLink link) {
+    return GameDownloadService.detectSource(link.url, name: link.name) != null;
+  }
+
+  /// Subtitle hint for downloadable extlinks.
+  Widget? _extlinkSubtitle(ExtLink link) {
+    final source = GameDownloadService.detectSource(link.url, name: link.name);
+    if (source == null) return null;
+    return Text(
+      '${GameDownloadService.sourceLabel(source)} 免费游戏 · 点击可下载',
+      style: const TextStyle(fontSize: 11),
     );
   }
 }

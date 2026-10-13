@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Paths shared through the androidx FileProvider (screenshot sharing and
+     downloaded game files). The Dart side downloads images and freem!
+     game archives into the app cache directory before handing them to the
+     share sheet / system viewer; external-path covers files stored in the
+     public Download collection or custom directories. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="cache" path="." />
+    <files-path name="files" path="." />
+    <external-cache-path name="external_cache" path="." />
+    <external-files-path name="external_files" path="." />
+    <external-path name="external_storage" path="." />
+</paths>

@@ -13,6 +13,10 @@ import '../core/providers/theme_provider.dart';
 /// [sexual] / [violence] come from [ImageRef] (0-2 scale, null = unknown).
 /// When blur is active, a small tap hint is overlaid; tapping toggles the
 /// reveal for the current session of the widget.
+///
+/// [cacheWidth] decodes the image into the memory cache at the given pixel
+/// width — a cheap way to keep large grids (character/VN covers) from
+/// holding many full-resolution bitmaps in RAM.
 class NsfImage extends ConsumerStatefulWidget {
   const NsfImage({
     super.key,
@@ -25,6 +29,7 @@ class NsfImage extends ConsumerStatefulWidget {
     this.borderRadius,
     this.placeholder,
     this.errorWidget,
+    this.cacheWidth,
   });
 
   final String? imageUrl;
@@ -36,6 +41,10 @@ class NsfImage extends ConsumerStatefulWidget {
   final BorderRadius? borderRadius;
   final Widget? placeholder;
   final Widget? errorWidget;
+
+  /// Optional decode width (in logical pixels scaled by the device pixel
+  /// ratio) for the in-memory cache. Null = decode at full size.
+  final int? cacheWidth;
 
   @override
   ConsumerState<NsfImage> createState() => _NsfImageState();
@@ -68,6 +77,7 @@ class _NsfImageState extends ConsumerState<NsfImage> {
       fit: widget.fit,
       width: widget.width,
       height: widget.height,
+      memCacheWidth: widget.cacheWidth,
       placeholder: (_, __) =>
           widget.placeholder ?? const ColoredBox(color: Colors.black12, child: SizedBox.expand()),
       errorWidget: (_, __, ___) =>
@@ -131,6 +141,7 @@ NsfImage nsfImageFromRef(
   BorderRadius? borderRadius,
   Widget? placeholder,
   Widget? errorWidget,
+  int? cacheWidth,
 }) {
   return NsfImage(
     key: key,
@@ -143,5 +154,6 @@ NsfImage nsfImageFromRef(
     borderRadius: borderRadius,
     placeholder: placeholder,
     errorWidget: errorWidget,
+    cacheWidth: cacheWidth,
   );
 }
