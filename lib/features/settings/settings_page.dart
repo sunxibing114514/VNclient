@@ -13,9 +13,11 @@ import '../../core/providers/auth_provider.dart';
 import '../../core/providers/detail_providers.dart';
 import '../../core/providers/locale_provider.dart';
 import '../../core/providers/theme_provider.dart';
+import '../../core/services/booth_auth_service.dart';
 import '../../core/services/download_settings_service.dart';
 import '../../core/services/update_checker.dart';
 import '../../core/theme/app_backgrounds.dart';
+import 'booth_login_page.dart';
 
 /// Settings page: token management, appearance, language, WebView login, links.
 class SettingsPage extends ConsumerStatefulWidget {
@@ -109,6 +111,176 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           '下载目录已更新: ${ref.read(downloadSettingsProvider).isAbsolute ? ref.read(downloadSettingsProvider).directory : 'Download/${ref.read(downloadSettingsProvider).directory}'}',
         ),
       ),
+    );
+  }
+
+  String _boothSubtitle(BoothAuthState booth) {
+    if (booth.checking) return '正在检查登录状态…';
+    return booth.isLoggedIn ? '已登录, BOOTH 作品可直接下载' : '未登录, BOOTH 下载需要账号';
+  }
+
+  Future<void> _manageBoothAccount(BuildContext context, WidgetRef ref) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        final logged = ref.read(boothAuthProvider).isLoggedIn;
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.shopping_bag_outlined, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'BOOTH 账号',
+                        style: Theme.of(sheetContext).textTheme.titleMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'BOOTH 的免费与已购作品都需要登录才能下载, 登录状态会保存在本机。',
+                      style: Theme.of(sheetContext).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '注意: 本应用为第三方客户端, 使用 BOOTH 登录与下载可能存在封号风险。',
+                      style: Theme.of(sheetContext)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Colors.orange.shade800),
+                    ),
+                  ],
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.login),
+                title: const Text('使用 Pixiv 账号登录'),
+                subtitle: const Text('网页内完成, 应用只保存会话'),
+                onTap: () => Navigator.pop(sheetContext, 'pixiv'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.email_outlined),
+                title: const Text('使用邮箱与密码登录'),
+                onTap: () => Navigator.pop(sheetContext, 'password'),
+              ),
+              if (logged)
+                ListTile(
+                  leading: const Icon(Icons.logout),
+                  title: const Text('退出登录'),
+                  onTap: () => Navigator.pop(sheetContext, 'logout'),
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+    if (choice == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    switch (choice) {
+      case 'pixiv':
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const BoothLoginPage()),
+        );
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              ref.read(boothAuthProvider).isLoggedIn
+                  ? 'BOOTH 获取账号成功'
+                  : 'BOOTH 获取账号失败, 可重试或改用邮箱登录',
+            ),
+          ),
+        );
+      case 'password':
+        await _boothEmailLogin(context, ref);
+      case 'logout':
+        await ref.read(boothAuthProvider.notifier).logout();
+        messenger.showSnackBar(
+          const SnackBar(content: Text('已退出 BOOTH 登录')),
+        );
+    }
+  }
+
+  Future<void> _boothEmailLogin(BuildContext context, WidgetRef ref) async {
+    final email = TextEditingController();
+    final password = TextEditingController();
+    String? busy;
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('BOOTH 邮箱登录'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '注意: 本应用为第三方客户端, 使用 BOOTH 登录与下载可能存在封号风险。',
+                style: Theme.of(dialogContext)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.orange.shade800),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: email,
+                autofocus: true,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(labelText: '邮箱'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: password,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: '密码'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: busy == null
+                  ? () => Navigator.pop(dialogContext, false)
+                  : null,
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: busy == null
+                  ? () async {
+                      setDialogState(() => busy = '…');
+                      final error = await ref
+                          .read(boothAuthProvider.notifier)
+                          .loginWithPassword(email.text, password.text);
+                      if (!dialogContext.mounted) return;
+                      if (error == null) {
+                        Navigator.pop(dialogContext, true);
+                      } else {
+                        setDialogState(() => busy = null);
+                        messenger.showSnackBar(SnackBar(content: Text(error)));
+                      }
+                    }
+                  : null,
+              child: const Text('登录'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    messenger.showSnackBar(
+      const SnackBar(content: Text('BOOTH 登录成功')),
     );
   }
 
@@ -508,6 +680,40 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => _editDownloadDir(context, ref),
+            ),
+            ListTile(
+              leading: const Icon(Icons.shopping_bag_outlined),
+              title: const Text('BOOTH 账号'),
+              subtitle: Text(
+                _boothSubtitle(ref.watch(boothAuthProvider)),
+                style: const TextStyle(fontSize: 11),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _manageBoothAccount(context, ref),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 14,
+                    color: Colors.orange.shade800,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '下载行为需您自行确认并遵守各平台条款; 本软件不绕过任何平台限制。',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.orange.shade800,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
           const Divider(),

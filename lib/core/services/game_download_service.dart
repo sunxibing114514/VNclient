@@ -24,9 +24,10 @@ enum GameDownloadSource {
   /// the "Archived download" link of v28439's English release.
   archiveOrg,
 
-  /// A Wayback Machine snapshot (web.archive.org/web/{ts}/{url}). Dead
-  /// official sites often still have their game archives captured; the
-  /// `id_` suffix makes the Wayback serve the original unmodified bytes.
+  /// A Wayback Machine snapshot (web.archive.org/web/{ts}/{url}) of a
+  /// dead site's game file; the `id_` suffix makes the Wayback serve the
+  /// original unmodified bytes. Page snapshots are not resolvable to a
+  /// file and open in the browser instead.
   wayback,
 
   /// itch.io game pages with free direct downloads. The page exposes
@@ -34,6 +35,8 @@ enum GameDownloadSource {
   /// CDN URL. Pages behind a price/registration wall or blocked by an
   /// administrator cannot be resolved.
   itch,
+
+  booth,
 
   /// A plain direct archive URL (…/game.zip etc.), commonly linked from
   /// official websites and notes.
@@ -82,10 +85,10 @@ class GameDownloadException implements Exception {
 ///    game file is downloaded from `archive.org/download/{id}/…`
 ///    (e.g. the "Archived download" link of v28439's English release).
 ///  - **Wayback Machine** (`https://web.archive.org/web/{ts}/{url}`) —
-///    snapshots of dead official sites; the `{ts}id_/{url}` form serves
-///    the original unmodified bytes, both for direct file captures and
-///    for page snapshots whose original HTML is scanned for archive
-///    links.
+///    snapshots of dead official sites whose original URL is itself a game
+///    file (the dead site's zip); the `{ts}id_/{url}` form serves the
+///    original unmodified bytes. Page snapshots are not guaranteed to
+///    resolve to a file, so they open in the browser instead.
 ///  - **itch.io** (`https://{user}.itch.io/{slug}`) — free direct-download
 ///    games: the page exposes upload ids and `POST /file/{upload_id}`
 ///    answers a short-lived signed CDN URL. Price-gated, registration
@@ -205,15 +208,28 @@ class GameDownloadService {
     caseSensitive: false,
   );
 
-  /// Absolute http(s) URL in a Wayback-captured page.
-  static final RegExp _absoluteLink = RegExp(
-    r'''https?://[^\s"'<>]+''',
+  static final RegExp _boothItem = RegExp(
+    r'^https?://(?:[a-z0-9-]+\.)*booth\.pm/(?:(?:ja|en|zh-cn|zh-tw|ko)/)?items/(\d+)(?:[/?#].*)?$',
     caseSensitive: false,
   );
 
-  /// Relative href in a Wayback-captured page, e.g. `href="game.zip"`.
-  static final RegExp _hrefLink = RegExp(
-    r'''href=["']([^"'\s]+)["']''',
+  static final RegExp _boothDownloadable = RegExp(
+    r'<a\s[^>]*\bhref="(https://booth\.pm/downloadables/[^"]+)"[^>]*>',
+    caseSensitive: false,
+  );
+
+  static final RegExp _boothAgeForm = RegExp(
+    r'<form[^>]*action="([^"]*age_check[^"]*)"[^>]*>([\s\S]*?)</form>',
+    caseSensitive: false,
+  );
+
+  static final RegExp _hiddenInput = RegExp(
+    r'<input[^>]*type="hidden"[^>]*>',
+    caseSensitive: false,
+  );
+
+  static final RegExp _titleAttr = RegExp(
+    r'title="([^"]+)"',
     caseSensitive: false,
   );
 
@@ -238,11 +254,19 @@ class GameDownloadService {
       return GameDownloadSource.vector;
     }
     if (_archiveOrgItem.hasMatch(clean)) return GameDownloadSource.archiveOrg;
-    // Wayback before directFile: a snapshot URL whose original points at a
-    // zip has a path ending in ".zip" and would otherwise be mistaken for
-    // a plain direct link.
-    if (_waybackUrl.hasMatch(clean)) return GameDownloadSource.wayback;
+    // Wayback — but only snapshots whose original URL is itself a game
+    // file (e.g. a dead site's zip). Page snapshots (promo pages, store
+    // listings, …) are not guaranteed to resolve to a file, so they are
+    // opened in the browser instead of promising a download.
+    // Checked before directFile: the snapshot URL's path ends in ".zip"
+    // and would otherwise be mistaken for a plain direct link.
+    final waybackMatch = _waybackUrl.firstMatch(clean);
+    if (waybackMatch != null &&
+        isDirectFileUrl(waybackMatch.group(2) ?? '')) {
+      return GameDownloadSource.wayback;
+    }
     if (_itchGamePage.hasMatch(clean)) return GameDownloadSource.itch;
+    if (_boothItem.hasMatch(clean)) return GameDownloadSource.booth;
     if (isDirectFileUrl(clean)) return GameDownloadSource.directFile;
     return null;
   }
@@ -270,6 +294,8 @@ class GameDownloadService {
         return 'Wayback Machine';
       case GameDownloadSource.itch:
         return 'itch.io';
+      case GameDownloadSource.booth:
+        return 'BOOTH';
       case GameDownloadSource.directFile:
         return '直链文件';
     }
@@ -287,6 +313,7 @@ class GameDownloadService {
     void Function(String message)? onStatus,
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
+    String? cookieHeader,
   }) async {
     // http:// is upgraded to https:// — see [_httpsUrl].
     final target = _httpsUrl(url.trim());
@@ -356,6 +383,16 @@ class GameDownloadService {
         return _downloadItch(
           target,
           savePath,
+          onStatus: onStatus,
+          onProgress: onProgress,
+          cancelToken: cancelToken,
+        );
+
+      case GameDownloadSource.booth:
+        return _downloadBooth(
+          target,
+          savePath,
+          cookieHeader: cookieHeader,
           onStatus: onStatus,
           onProgress: onProgress,
           cancelToken: cancelToken,
@@ -555,9 +592,9 @@ class GameDownloadService {
     return GameDownloadResult(file: File(savePath), filename: filename);
   }
 
-  /// Wayback Machine. `{ts}id_/{original}` serves the captured bytes
-  /// unmodified; page snapshots are scanned for archive links which are in
-  /// turn fetched through the Wayback.
+  /// Wayback Machine. `{ts}id_/{original}` serves the captured bytes of a
+  /// file snapshot unmodified; links without a concrete timestamp are
+  /// resolved to the nearest snapshot first.
   Future<GameDownloadResult> _downloadWayback(
     String url,
     String savePath, {
@@ -599,67 +636,18 @@ class GameDownloadService {
     String rawUrl(String target) =>
         'https://web.archive.org/web/${ts}id_/$target';
 
-    // Case 1: the snapshot is of a direct file (the dead site's zip).
-    if (isDirectFileUrl(original)) {
-      final filename = fileNameFromUrl(original, 'wayback_game.zip');
-      onStatus?.call('正在从网页存档下载 $filename…');
-      await _transfer(
-        rawUrl(original),
-        savePath,
-        onProgress: onProgress,
-        cancelToken: cancelToken,
-      );
-      return GameDownloadResult(file: File(savePath), filename: filename);
-    }
-
-    // Case 2: a page snapshot — fetch the ORIGINAL html through `id_`
-    // (no Wayback rewriting) and look for game file links.
-    final pageHtml = await _fetchHtml(rawUrl(original), cancelToken: cancelToken);
-
-    String? fileUrl;
-    for (final candidate in _absoluteLink.allMatches(pageHtml)) {
-      final link = candidate.group(0)!;
-      if (isDirectFileUrl(link)) {
-        fileUrl = link;
-        break;
-      }
-    }
-    fileUrl ??= _pickRelativeArchiveLink(pageHtml, original);
-
-    if (fileUrl == null) {
-      throw GameDownloadException(
-        '未在网页存档中找到游戏文件链接, 可选择访问存档页面手动下载',
-      );
-    }
-    final filename = fileNameFromUrl(fileUrl, 'wayback_game.zip');
+    // detectSource only classifies snapshots whose original URL is itself a
+    // game file, so the file can be fetched straight through `id_` (the
+    // original captured bytes, no Wayback rewriting).
+    final filename = fileNameFromUrl(original, 'wayback_game.zip');
     onStatus?.call('正在从网页存档下载 $filename…');
     await _transfer(
-      rawUrl(fileUrl),
+      rawUrl(original),
       savePath,
       onProgress: onProgress,
       cancelToken: cancelToken,
     );
     return GameDownloadResult(file: File(savePath), filename: filename);
-  }
-
-  /// Resolves relative hrefs ending in an archive extension against the
-  /// snapshot's original URL.
-  static String? _pickRelativeArchiveLink(String html, String baseUrl) {
-    final base = Uri.tryParse(baseUrl);
-    if (base == null) return null;
-    for (final candidate in _hrefLink.allMatches(html)) {
-      final href = candidate.group(1)!;
-      if (!isDirectFileUrl(href)) continue;
-      try {
-        final resolved = base.resolve(href);
-        if (resolved.isScheme('http') || resolved.isScheme('https')) {
-          return resolved.toString();
-        }
-      } catch (_) {
-        // ignore malformed hrefs
-      }
-    }
-    return null;
   }
 
   /// itch.io: the game page exposes upload ids; `POST /file/{upload_id}`
@@ -743,6 +731,146 @@ class GameDownloadService {
     return GameDownloadResult(file: File(savePath), filename: filename);
   }
 
+  Future<GameDownloadResult> _downloadBooth(
+    String url,
+    String savePath, {
+    String? cookieHeader,
+    void Function(String message)? onStatus,
+    void Function(int received, int total)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    if (_boothItem.firstMatch(url) == null) {
+      throw GameDownloadException('无法解析 BOOTH 条目链接');
+    }
+    final cookies = (cookieHeader ?? '').trim();
+    if (cookies.isEmpty) {
+      throw GameDownloadException('BOOTH 下载需要先登录账号 (设置 → BOOTH 账号)');
+    }
+    onStatus?.call('正在解析 BOOTH 条目…');
+
+    var pageHtml = await _fetchHtml(url, cancelToken: cancelToken, cookieHeader: cookies);
+    final reloaded = await _confirmBoothAgeGate(
+      url,
+      pageHtml,
+      cookies,
+      cancelToken: cancelToken,
+    );
+    if (reloaded != null) pageHtml = reloaded;
+
+    final files = _boothFiles(pageHtml);
+    if (files.isEmpty) {
+      throw GameDownloadException(
+        '未在 BOOTH 条目中找到可下载文件 (可能未购买该作品或登录已过期)',
+      );
+    }
+
+    int score(String name) {
+      final lower = name.toLowerCase();
+      var s = 0;
+      if (lower.contains('win') || lower.contains('pc')) s += 4;
+      if (lower.endsWith('.zip')) s += 2;
+      return s;
+    }
+
+    files.sort((a, b) => score(b.name).compareTo(score(a.name)));
+    final pick = files.first;
+
+    final filename = sanitizeFileName(
+      _archiveExt.hasMatch(pick.name) ? pick.name : '$pick.name.zip',
+    );
+    onStatus?.call('正在下载 $filename…');
+    await _transfer(
+      pick.href,
+      savePath,
+      cookieHeader: cookies,
+      onProgress: onProgress,
+      cancelToken: cancelToken,
+    );
+    _rejectHtmlPayload(savePath);
+    return GameDownloadResult(file: File(savePath), filename: filename);
+  }
+
+  static List<({String href, String name})> _boothFiles(String html) {
+    final result = <({String href, String name})>[];
+    final seen = <String>{};
+    for (final match in _boothDownloadable.allMatches(html)) {
+      final href = match.group(1)!;
+      if (!seen.add(href)) continue;
+      var name = _titleAttr.firstMatch(match.group(0)!)?.group(1) ?? '';
+      if (name.isEmpty) {
+        final tail = html.substring(match.end).split('</a>').first;
+        final text = tail
+            .replaceAll(RegExp(r'<[^>]+>'), ' ')
+            .replaceAll('&nbsp;', ' ')
+            .trim();
+        if (text.isNotEmpty) name = text.split(RegExp(r'\s')).first;
+      }
+      if (name.isEmpty) {
+        final id = Uri.tryParse(href)?.pathSegments.lastOrNull;
+        name = 'booth_${id ?? 'game'}.zip';
+      }
+      result.add((href: href, name: _decodeHtmlEntities(name)));
+    }
+    return result;
+  }
+
+  Future<String?> _confirmBoothAgeGate(
+    String pageUrl,
+    String html,
+    String cookies, {
+    CancelToken? cancelToken,
+  }) async {
+    final form = _boothAgeForm.firstMatch(html);
+    if (form == null) return null;
+    final action = Uri.parse(pageUrl).resolve(form.group(1)!).toString();
+    final fields = <String, String>{};
+    for (final input in _hiddenInput.allMatches(form.group(2)!)) {
+      final tag = input.group(0)!;
+      final name = RegExp('name="([^"]+)"').firstMatch(tag)?.group(1);
+      if (name == null) continue;
+      fields[name] = RegExp('value="([^"]*)"').firstMatch(tag)?.group(1) ?? '';
+    }
+    try {
+      await _dio.post<String>(
+        action,
+        data: fields,
+        options: Options(
+          responseType: ResponseType.plain,
+          contentType: Headers.formUrlEncodedContentType,
+          headers: {
+            'User-Agent': _desktopUserAgent,
+            'Cookie': cookies,
+          },
+        ),
+        cancelToken: cancelToken,
+      );
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) rethrow;
+      return null;
+    }
+    return _fetchHtml(pageUrl, cancelToken: cancelToken, cookieHeader: cookies);
+  }
+
+  static void _rejectHtmlPayload(String savePath) {
+    final file = File(savePath);
+    if (!file.existsSync()) return;
+    final length = file.lengthSync();
+    if (length == 0 || length > 512 * 1024) return;
+    final handle = file.openSync(mode: FileMode.read);
+    final bytes = handle.readSync(length < 2048 ? length : 2048);
+    handle.closeSync();
+    final text = String.fromCharCodes(bytes).toLowerCase();
+    if (text.startsWith('<') ||
+        text.contains('<!doctype') ||
+        text.contains('<html')) {
+      file.deleteSync();
+      if (text.contains('sign_in')) {
+        throw GameDownloadException('BOOTH 登录已过期, 请在设置中重新登录');
+      }
+      throw GameDownloadException('BOOTH 返回了页面而非文件 (可能未购买该作品, 可前往页面确认)');
+    }
+  }
+
   /// Minimal HTML entity decoding for file names parsed out of pages.
   /// The ampersand entity is decoded last so that sequences like the
   /// quoted-string entity survive as literal text.
@@ -776,6 +904,7 @@ class GameDownloadService {
   Future<String> _fetchHtml(
     String url, {
     CancelToken? cancelToken,
+    String? cookieHeader,
   }) async {
     try {
       final response = await _dio.get<String>(
@@ -784,7 +913,11 @@ class GameDownloadService {
           responseType: ResponseType.plain,
           // Desktop UA: vector.co.jp serves a stripped mobile page without
           // download links to phone user agents.
-          headers: {'User-Agent': _desktopUserAgent},
+          headers: {
+            'User-Agent': _desktopUserAgent,
+            if (cookieHeader != null && cookieHeader.isNotEmpty)
+              'Cookie': cookieHeader,
+          },
         ),
         cancelToken: cancelToken,
       );
@@ -802,6 +935,7 @@ class GameDownloadService {
     String url,
     String savePath, {
     String? referer,
+    String? cookieHeader,
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
   }) async {
@@ -810,7 +944,11 @@ class GameDownloadService {
         url,
         savePath,
         options: Options(
-          headers: {if (referer != null) 'Referer': referer},
+          headers: {
+            if (referer != null) 'Referer': referer,
+            if (cookieHeader != null && cookieHeader.isNotEmpty)
+              'Cookie': cookieHeader,
+          },
         ),
         onReceiveProgress: onProgress,
         cancelToken: cancelToken,

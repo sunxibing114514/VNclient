@@ -6,9 +6,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/router/app_router.dart';
+import '../../core/services/booth_auth_service.dart';
 import '../../core/services/download_settings_service.dart';
 import '../../core/services/game_download_service.dart';
 
@@ -50,6 +52,69 @@ Future<void> handleGameLinkTap(
     return;
   }
 
+  String? boothCookie;
+  if (source == GameDownloadSource.booth) {
+    boothCookie = ref.read(boothAuthProvider).cookieHeader;
+    if (boothCookie == null || boothCookie.isEmpty) {
+      final loginChoice = await showModalBottomSheet<String>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.account_circle_outlined, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'BOOTH 下载需要登录',
+                            style: Theme.of(sheetContext).textTheme.titleMedium,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '免费与已购作品都需要 BOOTH 账号, 登录状态会保存在本机。',
+                      style: Theme.of(sheetContext).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.login),
+                title: const Text('前往设置登录'),
+                subtitle: const Text('支持 Pixiv 与邮箱登录'),
+                onTap: () => Navigator.pop(sheetContext, 'login'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.open_in_new),
+                title: const Text('访问 BOOTH 页面'),
+                onTap: () => Navigator.pop(sheetContext, 'visit'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      );
+      if (!context.mounted) return;
+      switch (loginChoice) {
+        case 'login':
+          context.push('/settings');
+        case 'visit':
+          openWebView(context, url, title: label);
+      }
+      return;
+    }
+  }
+
   final sourceName = GameDownloadService.sourceLabel(source!);
   final settings = ref.read(downloadSettingsProvider);
   final choice = await showModalBottomSheet<String>(
@@ -81,6 +146,30 @@ Future<void> handleGameLinkTap(
                   '本作品可直接下载解析到的游戏文件。',
                   style: Theme.of(sheetContext).textTheme.bodySmall,
                 ),
+                const SizedBox(height: 6),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 14,
+                      color: Colors.orange.shade800,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '下载行为需您自行确认并遵守各平台条款; 本软件不绕过任何平台限制。',
+                        style: Theme.of(sheetContext)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(
+                              color: Colors.orange.shade800,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -110,7 +199,7 @@ Future<void> handleGameLinkTap(
   if (choice == 'visit') {
     openWebView(context, url, title: label);
   } else if (choice == 'download') {
-    await _startGameDownload(context, ref, url);
+    await _startGameDownload(context, ref, url, boothCookie: boothCookie);
   }
 }
 
@@ -121,8 +210,9 @@ Future<void> handleGameLinkTap(
 Future<void> _startGameDownload(
   BuildContext context,
   WidgetRef ref,
-  String url,
-) async {
+  String url, {
+  String? boothCookie,
+}) async {
   final service = GameDownloadService();
   final cancelToken = CancelToken();
   final state = ValueNotifier<_DownloadDialogState>(
@@ -142,6 +232,7 @@ Future<void> _startGameDownload(
       final result = await service.download(
         url,
         tmpPath,
+        cookieHeader: boothCookie,
         onStatus: (message) => state.value = state.value.copying(message),
         onProgress: (received, total) =>
             state.value = _DownloadDialogState.downloading(

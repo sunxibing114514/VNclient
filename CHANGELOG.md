@@ -3,7 +3,8 @@
 
 ## 新功能
 
-- 游戏下载 (Android): 支持 Freem! / NovelGame / Vector / itch.io / Internet Archive / 网页存档 / 直链归档, 点击即可下载, 下载目录可在设置中调整
+- 游戏下载 (Android): 支持 Freem! / NovelGame / Vector / itch.io / Internet Archive / 网页存档 / BOOTH / 直链归档, 点击即可下载, 下载目录可在设置中调整
+- BOOTH 账号登录: 设置中可用 Pixiv 或邮箱登录, 登录状态保存在本机, 免费与已购作品均可下载
 - 链接长按复制: 各页面外部链接及备注/简介内链接长按即可复制
 - 备注与简介链接: 发行版本备注与 VN 简介中的 BBCode 链接可点击, 可下载站点弹出下载面板
 - 时长投票入口: 时长弹窗展示官方标注/平均时长/投票数, 附网页版投票入口

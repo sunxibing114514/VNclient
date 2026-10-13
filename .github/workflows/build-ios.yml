@@ -171,6 +171,7 @@ jobs:
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
+        if: github.repository == 'sunxibing114514/vnclientt4'
         with:
           name: VNclient-ipa
           path: VNclient_ios_*.ipa
@@ -179,6 +180,7 @@ jobs:
 
       - name: Upload .app artifact
         uses: actions/upload-artifact@v4
+        if: github.repository == 'sunxibing114514/vnclientt4'
         with:
           name: VNclient-app
           path: build/ios/iphoneos/Runner.app

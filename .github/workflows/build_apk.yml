@@ -129,6 +129,7 @@ jobs:
 
       - name: 上传 x86-64 APK
         uses: actions/upload-artifact@v4
+        if: github.repository == 'sunxibing114514/vnclientt4'
         with:
           name: VNclient-v${{ env.VERSION }}-android-x86-64.apk
           path: output/VNclient-v${{ env.VERSION }}-android-x86-64.apk
@@ -137,6 +138,7 @@ jobs:
 
       - name: 上传 arm64-v8a APK
         uses: actions/upload-artifact@v4
+        if: github.repository == 'sunxibing114514/vnclientt4'
         with:
           name: VNclient-v${{ env.VERSION }}-android-arm64-v8a.apk
           path: output/VNclient-v${{ env.VERSION }}-android-arm64-v8a.apk
@@ -145,6 +147,7 @@ jobs:
 
       - name: 上传 armeabi-v7a APK
         uses: actions/upload-artifact@v4
+        if: github.repository == 'sunxibing114514/vnclientt4'
         with:
           name: VNclient-v${{ env.VERSION }}-android-armeabi-v7a.apk
           path: output/VNclient-v${{ env.VERSION }}-android-armeabi-v7a.apk
@@ -153,6 +156,7 @@ jobs:
 
       - name: 上传源码 zip
         uses: actions/upload-artifact@v4
+        if: github.repository == 'sunxibing114514/vnclientt4'
         with:
           name: VNclient-v${{ env.VERSION }}-source
           path: output/VNclient-v${{ env.VERSION }}-source.zip
