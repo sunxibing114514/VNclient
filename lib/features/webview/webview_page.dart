@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -32,6 +33,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
   bool _canGoBack = false;
   bool _canGoForward = false;
   double _progress = 0;
+  String? _loadError;
 
   static const _storage = FlutterSecureStorage();
   static const _cookieKey = 'vndb_web_cookies';
@@ -122,7 +124,9 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
               )
             : null,
       ),
-      body: InAppWebView(
+      body: Stack(
+        children: [
+          InAppWebView(
         initialUrlRequest: URLRequest(url: WebUri(widget.url)),
         initialSettings: InAppWebViewSettings(
           javaScriptEnabled: true,
@@ -131,16 +135,42 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
         ),
         onWebViewCreated: (controller) => _controller = controller,
         shouldOverrideUrlLoading: (controller, action) async {
-          // Open external (non-vndb) links in the system browser.
           final url = action.request.url;
           if (url != null && !url.toString().contains('vndb.org')) {
-            await launchUrl(url, mode: LaunchMode.externalApplication);
-            return NavigationActionPolicy.CANCEL;
+            try {
+              final ok =
+                  await launchUrl(url, mode: LaunchMode.externalApplication);
+              if (ok) return NavigationActionPolicy.CANCEL;
+            } catch (_) {}
+            return NavigationActionPolicy.ALLOW;
           }
           return NavigationActionPolicy.ALLOW;
         },
+        onLoadError: (controller, url, code, description) {
+          if (url.toString() == widget.url) {
+            setState(() {
+              _loadError = '加载失败 ($code): $description';
+              _loading = false;
+            });
+          }
+        },
+        onReceivedError: (controller, request, error) {
+          if (request.url.toString() == widget.url &&
+              !request.isForMainFrame!) {
+            return;
+          }
+          if (request.isForMainFrame == true) {
+            setState(() {
+              _loadError = '加载失败 (${error.type}): ${error.description}';
+              _loading = false;
+            });
+          }
+        },
         onLoadStart: (controller, url) {
-          setState(() => _loading = true);
+          setState(() {
+            _loading = true;
+            _loadError = null;
+          });
         },
         onLoadStop: (controller, url) async {
           await _persistCookies();
@@ -149,6 +179,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
           final fwd = await controller.canGoForward();
           setState(() {
             _loading = false;
+            _loadError = null;
             if (t != null && t.isNotEmpty) _title = t;
             _canGoBack = back;
             _canGoForward = fwd;
@@ -162,6 +193,70 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
             setState(() => _title = title);
           }
         },
+          ),
+          if (_loadError != null)
+            Positioned.fill(
+              child: Container(
+                color: Theme.of(context).colorScheme.surface,
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.wifi_off,
+                          size: 48, color: Theme.of(context).colorScheme.error),
+                      const SizedBox(height: 12),
+                      Text(
+                        _loadError!,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.url,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          FilledButton.icon(
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('重试'),
+                            onPressed: () => _controller.reload(),
+                          ),
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.content_copy),
+                            label: const Text('复制链接'),
+                            onPressed: () {
+                              Clipboard.setData(
+                                  ClipboardData(text: widget.url));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('链接已复制')),
+                              );
+                            },
+                          ),
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.open_in_browser),
+                            label: const Text('浏览器打开'),
+                            onPressed: () async {
+                              try {
+                                await launchUrl(Uri.parse(widget.url),
+                                    mode: LaunchMode.externalApplication);
+                              } catch (_) {}
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -169,7 +264,24 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
   Future<void> _shareCurrent() async {
     final uri = await _controller.getUrl();
     if (uri != null) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      try {
+        final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+        if (!ok) {
+          Clipboard.setData(ClipboardData(text: uri.toString()));
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('无法打开外部浏览器, 链接已复制')),
+            );
+          }
+        }
+      } catch (_) {
+        Clipboard.setData(ClipboardData(text: uri.toString()));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('无法打开外部浏览器, 链接已复制')),
+          );
+        }
+      }
     }
   }
 }

@@ -117,7 +117,15 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             '基于 VNDB Kana API v2 实现，并通过内嵌 WebView 衔接 API 暂未支持的社交与编辑功能。',
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          Text(
+            '客户端中的翻译来自'
+            ' sunxibing114514/translate-vndb-description 社区翻译计划'
+            '与 MyMemory API 机器翻译。',
+            style: Theme.of(context).textTheme.bodySmall,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
           const _AboutTile(
             icon: Icons.code,
             title: 'GitHub',

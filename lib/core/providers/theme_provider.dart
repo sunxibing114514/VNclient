@@ -27,6 +27,7 @@ class ThemeSettings {
     this.customBackgroundPath,
     this.titleDisplay = TitleDisplayMode.romanized,
     this.useCustomSeedColor = false,
+    this.showVnId = false,
   });
 
   final Color seedColor;
@@ -51,6 +52,10 @@ class ThemeSettings {
   /// built-in background is chosen.
   final bool useCustomSeedColor;
 
+  /// When true, the database id (e.g. `v17`) is appended after VN titles
+  /// throughout the app (`标题 (v17)`).
+  final bool showVnId;
+
   /// Resolved background descriptor.
   AppBackground get background =>
       AppBackgrounds.byId(backgroundId, customPath: customBackgroundPath);
@@ -71,6 +76,7 @@ class ThemeSettings {
     String? customBackgroundPath,
     TitleDisplayMode? titleDisplay,
     bool? useCustomSeedColor,
+    bool? showVnId,
   }) {
     return ThemeSettings(
       seedColor: seedColor ?? this.seedColor,
@@ -81,6 +87,7 @@ class ThemeSettings {
           customBackgroundPath ?? this.customBackgroundPath,
       titleDisplay: titleDisplay ?? this.titleDisplay,
       useCustomSeedColor: useCustomSeedColor ?? this.useCustomSeedColor,
+      showVnId: showVnId ?? this.showVnId,
     );
   }
 }
@@ -98,6 +105,7 @@ class ThemeNotifier extends StateNotifier<ThemeSettings> {
   static const _keyCustomBg = 'theme_custom_bg_path';
   static const _keyTitleDisplay = 'theme_title_display';
   static const _keyUseCustomSeed = 'theme_use_custom_seed';
+  static const _keyShowVnId = 'theme_show_vn_id';
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -108,6 +116,7 @@ class ThemeNotifier extends StateNotifier<ThemeSettings> {
     final customBg = prefs.getString(_keyCustomBg);
     final titleStr = prefs.getString(_keyTitleDisplay);
     final useCustomSeed = prefs.getBool(_keyUseCustomSeed);
+    final showVnId = prefs.getBool(_keyShowVnId);
     state = ThemeSettings(
       seedColor: seed == null
           ? const Color(0xFF325064)
@@ -125,6 +134,7 @@ class ThemeNotifier extends StateNotifier<ThemeSettings> {
         _ => TitleDisplayMode.romanized,
       },
       useCustomSeedColor: useCustomSeed ?? false,
+      showVnId: showVnId ?? false,
     );
   }
 
@@ -203,6 +213,13 @@ class ThemeNotifier extends StateNotifier<ThemeSettings> {
         TitleDisplayMode.japanese => 'japanese',
       },
     );
+  }
+
+  /// Toggles appending the database id (e.g. `v17`) after VN titles.
+  Future<void> setShowVnId(bool value) async {
+    state = state.copyWith(showVnId: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyShowVnId, value);
   }
 
   String _ext(String path) {

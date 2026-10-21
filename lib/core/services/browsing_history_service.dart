@@ -43,21 +43,25 @@ class BrowsingHistoryService extends StateNotifier<List<HistoryEntry>> {
   late final Future<void> _loadFuture;
 
   Future<void> _load() async {
-    _prefs = await SharedPreferences.getInstance();
-    final raw = _prefs!.getString(AppConstants.browsingHistoryKey);
-    if (raw != null) {
-      final list = jsonDecode(raw) as List;
-      state = list
-          .map((e) => HistoryEntry.fromJson(e as Map<String, dynamic>))
-          .toList();
-    }
+    try {
+      _prefs = await SharedPreferences.getInstance();
+      final raw = _prefs!.getString(AppConstants.browsingHistoryKey);
+      if (raw != null) {
+        final list = jsonDecode(raw) as List;
+        state = list
+            .map((e) => HistoryEntry.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+    } catch (_) {}
   }
 
   Future<void> _persist() async {
-    await _prefs?.setString(
-      AppConstants.browsingHistoryKey,
-      jsonEncode(state.map((e) => e.toJson()).toList()),
-    );
+    try {
+      await _prefs?.setString(
+        AppConstants.browsingHistoryKey,
+        jsonEncode(state.map((e) => e.toJson()).toList()),
+      );
+    } catch (_) {}
   }
 
   /// Records a VN view, moving it to the front of the history list.

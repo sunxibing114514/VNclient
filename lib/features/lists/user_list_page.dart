@@ -11,26 +11,42 @@ import '../../core/providers/detail_providers.dart';
 import '../../core/providers/endpoints_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/theme/title_resolver.dart';
+import '../../widgets/copyable_text.dart';
 import '../../widgets/nsf_image.dart';
 import '../../widgets/section_header.dart';
 import '../../widgets/vndb_icons.dart';
 import '../vn_detail/list_edit_dialog.dart';
 
-/// A tabbed view of the user's VN list. The top bar shows all available
+/// A tabbed view of a user's VN list. The top bar shows all available
 /// labels (Playing, Finished, Stalled, Dropped, Wishlist, Voted, Blacklist,
 /// plus any custom labels) fetched from the API.
+///
+/// When [userId] is provided, the list of *that* user is shown instead of
+/// the authenticated user's own list — this is view-only: public labels and
+/// entries are fetched through `POST /ulist` / `GET /ulist_labels` with the
+/// `user` parameter, and all mutation affordances (swipe-to-delete, the
+/// long-press edit dialog) are hidden.
 class UserListPage extends ConsumerWidget {
-  const UserListPage({super.key, this.initialTab});
+  const UserListPage({super.key, this.initialTab, this.userId});
 
   /// `'votes'`, `'wishlist'`, `'playing'`, `'finished'`, `'stalled'`,
   /// `'dropped'`, `'blacklist'` or null (all).
   final String? initialTab;
 
+  /// The VNDB user id whose list should be displayed (e.g. `u2`).
+  /// When null, the currently authenticated user's own list is shown.
+  final String? userId;
+
+  /// Whether the page shows another user's (view-only) list.
+  bool get isViewingOther => userId != null;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authNotifierProvider);
     final l10n = ref.watch(l10nProvider);
-    if (!auth.isAuthenticated) {
+    // Viewing another user works without authentication (public data);
+    // only the own-list view requires a signed-in user.
+    if (!isViewingOther && !auth.isAuthenticated) {
       return Scaffold(
         appBar: AppBar(title: Text(l10n.tr('myList'))),
         body: Center(
@@ -51,10 +67,14 @@ class UserListPage extends ConsumerWidget {
       );
     }
 
-    final labelsAsync = ref.watch(userLabelsProvider);
+    // Resolve the labels of the user whose list is displayed: another user's
+    // public labels, or the authenticated user's own labels.
+    final labelsAsync = userId != null
+        ? ref.watch(userLabelsForProvider(userId!))
+        : ref.watch(userLabelsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.tr('myList'))),
+      appBar: AppBar(title: Text(isViewingOther ? l10n.tr('list') : l10n.tr('myList'))),
       body: labelsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(
@@ -66,7 +86,13 @@ class UserListPage extends ConsumerWidget {
               Text('$e'),
               const SizedBox(height: 12),
               FilledButton(
-                onPressed: () => ref.invalidate(userLabelsProvider),
+                onPressed: () {
+                  if (userId != null) {
+                    ref.invalidate(userLabelsForProvider(userId!));
+                  } else {
+                    ref.invalidate(userLabelsProvider);
+                  }
+                },
                 child: const Text('重试'),
               ),
             ],
@@ -102,7 +128,10 @@ class UserListPage extends ConsumerWidget {
             for (final l in apiLabels) l.id: l.count,
           };
           // Total entry count for the "全部" tab.
-          final totalCount = ref.watch(userListTotalCountProvider).valueOrNull;
+          final totalCount = (userId != null
+                  ? ref.watch(userListTotalCountForProvider(userId!))
+                  : ref.watch(userListTotalCountProvider))
+              .valueOrNull;
 
           String tabLabel(String label, int? labelId, int? count) =>
               count == null ? label : '$label ($count)';
@@ -161,7 +190,10 @@ class UserListPage extends ConsumerWidget {
                 Expanded(
                   child: TabBarView(
                     children: tabs
-                        .map((t) => _ListTabView(labelId: t.labelId))
+                        .map((t) => _ListTabView(
+                              labelId: t.labelId,
+                              userId: userId,
+                            ))
                         .toList(),
                   ),
                 ),
@@ -181,10 +213,17 @@ class _ListTab {
 }
 
 /// A single tab's paginated list, filtered by [labelId].
+///
+/// When [userId] is provided the list belongs to another user and is
+/// view-only (no swipe-to-delete, no edit dialog).
 class _ListTabView extends ConsumerStatefulWidget {
-  const _ListTabView({this.labelId});
+  const _ListTabView({this.labelId, this.userId});
 
   final int? labelId;
+
+  /// The VNDB user id whose list is displayed, or null for the
+  /// authenticated user's own list.
+  final String? userId;
 
   @override
   ConsumerState<_ListTabView> createState() => _ListTabViewState();
@@ -247,7 +286,7 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
     _DropdownOption(label: 'Nintendo 3DS', value: 'n3ds'),
     _DropdownOption(label: 'Wii', value: 'wii'),
     _DropdownOption(label: 'Wii U', value: 'wiu'),
-    _DropdownOption(label: 'Xbox 360', value: 'x360'),
+    _DropdownOption(label: 'Xbox 360', value: 'xb3'),
     _DropdownOption(label: 'Xbox One', value: 'xbo'),
     _DropdownOption(label: 'Web', value: 'web'),
     _DropdownOption(label: 'Other', value: 'oth'),
@@ -348,8 +387,7 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
       _devController.text.trim().isNotEmpty;
 
   Future<void> _fetch({bool reset = false}) async {
-    final auth = ref.read(authNotifierProvider);
-    final userId = auth.user?.id;
+    final userId = widget.userId ?? ref.read(authNotifierProvider).user?.id;
     if (userId == null) return;
     if (reset) {
       // 抛弃旧的查询结果(包括仍在途的请求),从第 1 页重新开始。
@@ -400,8 +438,7 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
   /// 保存滚动位置地刷新:重新拉取当前已加载的各页数据后原位恢复,
   /// 用于"修改列表条目保存后"与下拉刷新,避免列表跳回顶部。
   Future<void> _onRefresh() async {
-    final auth = ref.read(authNotifierProvider);
-    final userId = auth.user?.id;
+    final userId = widget.userId ?? ref.read(authNotifierProvider).user?.id;
     if (userId == null) return;
     if (_loading || _items.isEmpty) {
       // 首次进入还没有数据,走普通重置逻辑。
@@ -726,6 +763,7 @@ class _ListTabViewState extends ConsumerState<_ListTabView>
         return _ListEntryTile(
           entry: entry,
           onRefresh: _onRefresh,
+          viewOnly: widget.userId != null,
         );
       },
     );
@@ -745,9 +783,16 @@ class _SortOption {
 }
 
 class _ListEntryTile extends ConsumerWidget {
-  const _ListEntryTile({required this.entry, required this.onRefresh});
+  const _ListEntryTile({
+    required this.entry,
+    required this.onRefresh,
+    this.viewOnly = false,
+  });
   final dynamic entry;
   final Future<void> Function() onRefresh;
+
+  /// True when showing another user's list — mutations are disabled.
+  final bool viewOnly;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -764,6 +809,99 @@ class _ListEntryTile extends ConsumerWidget {
     final langs = vn?.languages as List<String>? ?? const <String>[];
     final plats = vn?.platforms as List<String>? ?? const <String>[];
     final labels = (entry.labels as List?) ?? const [];
+
+    final tile = Card(
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(8),
+        leading: vn?.image?.thumbnail != null
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: NsfImage(
+                  imageUrl: vn!.image!.thumbnail,
+                  sexual: vn.image?.sexual as num?,
+                  violence: vn.image?.violence as num?,
+                  width: 48,
+                  height: 70,
+                  fit: BoxFit.cover,
+                  // 48px 宽缩略图, 限制解码宽度以省内存。
+                  cacheWidth: 96,
+                  placeholder: Container(
+                    width: 48,
+                    height: 70,
+                    color: Theme.of(context).colorScheme.surface,
+                  ),
+                  errorWidget: Container(
+                    width: 48,
+                    height: 70,
+                    color: Theme.of(context).colorScheme.surface,
+                    child: const Icon(Icons.broken_image, size: 20),
+                  ),
+                ),
+              )
+            : Container(
+                width: 48,
+                height: 70,
+                color: Theme.of(context).colorScheme.surface,
+                child: const Icon(Icons.book),
+              ),
+        title: CopyableText(
+          text: title,
+          vnId: entry.id as String?,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            // Top row: list status icons + language flags + platform icons.
+            if (labels.isNotEmpty ||
+                langs.isNotEmpty ||
+                plats.isNotEmpty)
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  for (final l in labels)
+                    if (l.id is int && l.id >= 1 && l.id <= 6)
+                      VndbIcons.listImage(l.id as int, size: 16),
+                  if (langs.isNotEmpty) VndbIcons.langRow(langs),
+                  if (plats.isNotEmpty) VndbIcons.platRow(plats),
+                ],
+              ),
+            if (entry.vote != null)
+              Text('投票: ${(entry.vote / 10).toStringAsFixed(1)}'),
+            if (labels.isNotEmpty)
+              Wrap(
+                spacing: 4,
+                children: labels
+                    .map<Widget>((l) => Chip(
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                          padding: EdgeInsets.zero,
+                          label: Text(l.label,
+                              style: const TextStyle(fontSize: 10)),
+                        ))
+                    .toList(),
+              ),
+            if (entry.notes != null && entry.notes.isNotEmpty)
+              Text(entry.notes,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+          ],
+        ),
+        onTap: () => context.push('/vn/${entry.id}'),
+        onLongPress: viewOnly
+            ? null
+            : () => showDialog<void>(
+                  context: context,
+                  builder: (_) => ListEditDialog(vnId: entry.id),
+                ).then((_) => onRefresh()),
+      ),
+    );
+
+    if (viewOnly) return tile;
 
     return Dismissible(
       key: ValueKey(entry.id),
@@ -807,106 +945,23 @@ class _ListEntryTile extends ConsumerWidget {
         }
         onRefresh();
       },
-      child: Card(
-        child: ListTile(
-          contentPadding: const EdgeInsets.all(8),
-          leading: vn?.image?.thumbnail != null
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: NsfImage(
-                    imageUrl: vn!.image!.thumbnail,
-                    sexual: vn.image?.sexual as num?,
-                    violence: vn.image?.violence as num?,
-                    width: 48,
-                    height: 70,
-                    fit: BoxFit.cover,
-                    placeholder: Container(
-                      width: 48,
-                      height: 70,
-                      color: Theme.of(context).colorScheme.surface,
-                    ),
-                    errorWidget: Container(
-                      width: 48,
-                      height: 70,
-                      color: Theme.of(context).colorScheme.surface,
-                      child: const Icon(Icons.broken_image, size: 20),
-                    ),
-                  ),
-                )
-              : Container(
-                  width: 48,
-                  height: 70,
-                  color: Theme.of(context).colorScheme.surface,
-                  child: const Icon(Icons.book),
-                ),
-          title: Text(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 4),
-              // Top row: list status icons + language flags + platform icons.
-              if (labels.isNotEmpty ||
-                  langs.isNotEmpty ||
-                  plats.isNotEmpty)
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    for (final l in labels)
-                      if (l.id is int && l.id >= 1 && l.id <= 6)
-                        VndbIcons.listImage(l.id as int, size: 16),
-                    if (langs.isNotEmpty) VndbIcons.langRow(langs),
-                    if (plats.isNotEmpty) VndbIcons.platRow(plats),
-                  ],
-                ),
-              if (entry.vote != null)
-                Text('投票: ${(entry.vote / 10).toStringAsFixed(1)}'),
-              if (labels.isNotEmpty)
-                Wrap(
-                  spacing: 4,
-                  children: labels
-                      .map<Widget>((l) => Chip(
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                            padding: EdgeInsets.zero,
-                            label: Text(l.label,
-                                style: const TextStyle(fontSize: 10)),
-                          ))
-                      .toList(),
-                ),
-              if (entry.notes != null && entry.notes.isNotEmpty)
-                Text(entry.notes,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-            ],
-          ),
-          onTap: () => context.push('/vn/${entry.id}'),
-          onLongPress: () => showDialog<void>(
-            context: context,
-            builder: (_) => ListEditDialog(vnId: entry.id),
-          ).then((_) => onRefresh()),
-        ),
-      ),
+      child: tile,
     );
   }
 }
 
-/// The "profile" / user center tab. Shows the current user's info and links to
-/// their lists, or, when [userId] is provided, opens that user's profile.
+/// The "profile" / user center tab for the *authenticated* user.
+///
+/// Viewing other users is handled by [UserProfilePage] (`/user/:id`);
+/// this page only ever shows the current account, so there is no risk of
+/// displaying the wrong username or token permissions.
 class ProfilePage extends ConsumerWidget {
-  const ProfilePage({super.key, this.userId});
-
-  final String? userId;
+  const ProfilePage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authNotifierProvider);
-    final uid = userId ?? auth.user?.id;
+    final uid = auth.user?.id;
 
     if (uid == null) {
       return Scaffold(
@@ -933,7 +988,7 @@ class ProfilePage extends ConsumerWidget {
     final user = auth.user;
     return Scaffold(
       appBar: AppBar(
-        title: Text(userId != null ? '用户' : '我的'),
+        title: const Text('我的'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -953,14 +1008,16 @@ class ProfilePage extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           Center(
-            child: Text(
-              user?.username ?? uid,
+            child: CopyableText(
+              text: user?.username ?? uid,
               style: Theme.of(context).textTheme.titleLarge,
             ),
           ),
           Center(
-            child: Text(uid,
-                style: Theme.of(context).textTheme.bodySmall),
+            child: CopyableText(
+              text: uid,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ),
           if (user != null) ...[
             const SizedBox(height: 8),
@@ -977,39 +1034,31 @@ class ProfilePage extends ConsumerWidget {
             ),
           ],
           SectionHeader(title: '我的列表', icon: Icons.bookmark),
-          if (userId == null) ...[
-            ListTile(
-              leading: const Icon(Icons.bookmark),
-              title: const Text('我的 VN 列表'),
-              onTap: () => context.push('/list'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.star),
-              title: const Text('我的投票'),
-              onTap: () => context.push('/list?tab=votes'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.card_giftcard),
-              title: const Text('我的愿望单'),
-              onTap: () => context.push('/list?tab=wishlist'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.history),
-              title: const Text('浏览历史'),
-              onTap: () => context.push('/history'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.favorite),
-              title: const Text('关注列表'),
-              onTap: () => context.push('/followed-producers'),
-            ),
-          ] else
-            ListTile(
-              leading: const Icon(Icons.public),
-              title: const Text('在网页查看'),
-              onTap: () => context.push(
-                  '/webview?url=${Uri.encodeComponent("https://vndb.org/$uid")}&title=${Uri.encodeComponent("用户资料")}'),
-            ),
+          ListTile(
+            leading: const Icon(Icons.bookmark),
+            title: const Text('我的 VN 列表'),
+            onTap: () => context.push('/list'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.star),
+            title: const Text('我的投票'),
+            onTap: () => context.push('/list?tab=votes'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.card_giftcard),
+            title: const Text('我的愿望单'),
+            onTap: () => context.push('/list?tab=wishlist'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.history),
+            title: const Text('浏览历史'),
+            onTap: () => context.push('/history'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.favorite),
+            title: const Text('关注列表'),
+            onTap: () => context.push('/followed-producers'),
+          ),
           SectionHeader(title: '账户', icon: Icons.manage_accounts),
           ListTile(
             leading: const Icon(Icons.person),
@@ -1017,12 +1066,11 @@ class ProfilePage extends ConsumerWidget {
             onTap: () =>
                 context.push('/webview?url=${Uri.encodeComponent("https://vndb.org/$uid")}&title=${Uri.encodeComponent("用户资料")}'),
           ),
-          if (userId == null)
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('退出登录'),
-              onTap: () => _logout(context, ref),
-            ),
+          ListTile(
+            leading: const Icon(Icons.logout),
+            title: const Text('退出登录'),
+            onTap: () => _logout(context, ref),
+          ),
         ],
       ),
     );

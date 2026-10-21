@@ -44,6 +44,13 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.debug
+            // R8 shrinking: strips unused dex classes and resources from
+            // the release APK (the Flutter engine and AOT Dart code are
+            // unaffected; plugin bridges are kept via proguard-rules.pro).
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
+                         'proguard-rules.pro'
         }
     }
 }

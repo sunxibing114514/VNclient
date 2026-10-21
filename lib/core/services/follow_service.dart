@@ -120,7 +120,7 @@ class ProducerNotification {
 /// Formats a millisecond timestamp as `YYYY-MM-DD` for the VNDB `released`
 /// filter, which accepts partial date strings.
 String _millisToDateStr(int millis) {
-  final dt = DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true);
+  final dt = DateTime.fromMillisecondsSinceEpoch(millis);
   final y = dt.year.toString();
   final m = dt.month.toString().padLeft(2, '0');
   final d = dt.day.toString().padLeft(2, '0');
@@ -148,11 +148,12 @@ String _millisToDisplay(int millis) {
 /// releases.
 class FollowService extends StateNotifier<FollowState> {
   FollowService(this._vnEndpoint) : super(const FollowState()) {
-    _load();
+    _loaded = _load();
   }
 
   final VnEndpoint _vnEndpoint;
   SharedPreferences? _prefs;
+  late final Future<void> _loaded;
   bool _checking = false;
 
   Future<void> _load() async {
@@ -192,6 +193,7 @@ class FollowService extends StateNotifier<FollowState> {
   }
 
   Future<void> follow(String producerId, String name) async {
+    await _loaded;
     if (isFollowing(producerId)) return;
     final now = DateTime.now().millisecondsSinceEpoch;
     final entry = FollowedProducer(
@@ -208,6 +210,7 @@ class FollowService extends StateNotifier<FollowState> {
   }
 
   Future<void> unfollow(String producerId) async {
+    await _loaded;
     state = FollowState(
       followed: state.followed.where((p) => p.id != producerId).toList(),
       notifications: state.notifications,
@@ -217,6 +220,7 @@ class FollowService extends StateNotifier<FollowState> {
 
   /// Marks all notifications as read (clears the red-dot badge).
   Future<void> markAllRead() async {
+    await _loaded;
     if (state.notifications.every((n) => n.read)) return;
     state = FollowState(
       followed: state.followed,
@@ -226,7 +230,23 @@ class FollowService extends StateNotifier<FollowState> {
     await _persist();
   }
 
+  Future<void> markRead(String notificationId) async {
+    await _loaded;
+    if (!state.notifications
+        .any((n) => n.id == notificationId && !n.read)) {
+      return;
+    }
+    state = FollowState(
+      followed: state.followed,
+      notifications: state.notifications
+          .map((n) => n.id == notificationId ? n.copyWith(read: true) : n)
+          .toList(),
+    );
+    await _persist();
+  }
+
   Future<void> dismissNotification(String notificationId) async {
+    await _loaded;
     state = FollowState(
       followed: state.followed,
       notifications: state.notifications
@@ -237,6 +257,7 @@ class FollowService extends StateNotifier<FollowState> {
   }
 
   Future<void> clearAllNotifications() async {
+    await _loaded;
     state = FollowState(
       followed: state.followed,
       notifications: const [],
@@ -249,6 +270,7 @@ class FollowService extends StateNotifier<FollowState> {
   /// `lastSeenAt` timestamp is advanced to "now". Safe to call repeatedly;
   /// concurrent calls are ignored.
   Future<int> checkForNewWorks() async {
+    await _loaded;
     if (_checking) return 0;
     if (state.followed.isEmpty) return 0;
     _checking = true;

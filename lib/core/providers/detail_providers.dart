@@ -91,6 +91,25 @@ final userLabelsProvider =
   return ref.watch(listEndpointProvider).getLabels(userId);
 });
 
+/// The public labels of an arbitrary user (used when browsing another
+/// user's profile). Private labels are only returned by the API when the
+/// request is authenticated with the `listread` permission for that user.
+final userLabelsForProvider = FutureProvider.autoDispose
+    .family<List<UlistLabelDef>, String>((ref, userId) {
+  return ref.watch(listEndpointProvider).getLabels(userId);
+});
+
+/// Total number of entries in an arbitrary user's VN list (all labels),
+/// used for the "全部" tab count.
+final userListTotalCountForProvider =
+    FutureProvider.autoDispose.family<int?, String>((ref, userId) async {
+  try {
+    return await ref.watch(listEndpointProvider).getCount(userId);
+  } catch (_) {
+    return null;
+  }
+});
+
 /// Total number of entries in the current user's VN list (all labels),
 /// used for the "全部" tab count. Returns null when unavailable.
 final userListTotalCountProvider =

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_constants.dart';
@@ -11,9 +12,12 @@ import '../../core/providers/auth_provider.dart';
 import '../../core/providers/detail_providers.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/router/app_router.dart';
+import '../../core/services/announcement_service.dart';
 import '../../core/services/follow_service.dart';
+import '../../core/services/update_checker.dart';
 import '../../core/theme/title_resolver.dart';
 import '../../widgets/async_value_widget.dart';
+import '../../widgets/copyable_text.dart';
 import '../../widgets/nsf_image.dart';
 import '../../widgets/release_card.dart';
 import '../../widgets/section_header.dart';
@@ -88,7 +92,81 @@ class _HomePageState extends ConsumerState<HomePage> {
       Future.microtask(
         () => ref.read(followServiceProvider.notifier).checkForNewWorks(),
       );
+      // Check for a new app version once per launch. Fire-and-forget;
+      // a dialog is shown only when a newer version is available.
+      Future.microtask(() => _checkForUpdates());
     });
+  }
+
+  /// Silent update check on app entry (进入软件检查新版本).
+  ///
+  /// Only shows a dialog when a newer version exists. The user can dismiss
+  /// the reminder for the current latest version so it won't nag on every
+  /// launch; a manual "检查更新" is always available in the settings page.
+  Future<void> _checkForUpdates() async {
+    try {
+      final result = await ref.read(updateCheckerProvider).check();
+      if (!mounted || result.isError || !result.hasUpdate) return;
+      final prefs = await SharedPreferences.getInstance();
+      final skipped =
+          prefs.getString('update_check_skipped_version') ?? '';
+      if (skipped == result.latestVersion) return;
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('发现新版本'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('当前版本: v${result.currentVersion}'),
+              Text('最新版本: v${result.latestVersion}'),
+              if (result.releaseNotes != null &&
+                  result.releaseNotes!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text('更新内容:',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Text(
+                  result.releaseNotes!,
+                  style: const TextStyle(fontSize: 13),
+                  maxLines: 8,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                final p = await SharedPreferences.getInstance();
+                await p.setString(
+                    'update_check_skipped_version', result.latestVersion);
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: const Text('不再提示此版本'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('稍后再说'),
+            ),
+            FilledButton.icon(
+              icon: const Icon(Icons.download),
+              label: const Text('前往下载'),
+              onPressed: () {
+                Navigator.pop(ctx);
+                final url = result.releaseUrl ?? AppLinks.latestReleaseUrl;
+                launchUrl(Uri.parse(url),
+                    mode: LaunchMode.externalApplication);
+              },
+            ),
+          ],
+        ),
+      );
+    } catch (_) {
+      // Silent failure — the check must never disturb the startup flow.
+    }
   }
 
   @override
@@ -96,6 +174,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     final auth = ref.watch(authNotifierProvider);
     final l10n = ref.watch(l10nProvider);
     final followState = ref.watch(followServiceProvider);
+    final announcementState = ref.watch(announcementServiceProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('VNDB'),
@@ -103,8 +182,10 @@ class _HomePageState extends ConsumerState<HomePage> {
           // Message center bell with a red dot when there are unread items.
           IconButton(
             icon: _NotificationIcon(
-              hasUnread: followState.hasUnread,
-              unreadCount: followState.unreadCount,
+              hasUnread:
+                  followState.hasUnread || announcementState.hasUnseen,
+              unreadCount:
+                  followState.unreadCount + announcementState.unseenCount,
             ),
             tooltip: '消息',
             onPressed: () => context.push('/notifications'),
@@ -577,6 +658,8 @@ class _BirthdayCard extends ConsumerWidget {
                         sexual: character.image?.sexual,
                         violence: character.image?.violence,
                         fit: BoxFit.cover,
+                        // 110px-wide card avatars: cap decode width.
+                        cacheWidth: 220,
                         placeholder: Container(
                           color: Theme.of(context).colorScheme.surface,
                         ),
@@ -594,8 +677,8 @@ class _BirthdayCard extends ConsumerWidget {
                 padding: const EdgeInsets.all(4),
                 child: Column(
                   children: [
-                    Text(
-                      name,
+                    CopyableText(
+                      text: name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -646,6 +729,8 @@ class _VnCard extends ConsumerWidget {
                       sexual: vn.image?.sexual,
                       violence: vn.image?.violence,
                       fit: BoxFit.cover,
+                      // 130px-wide card covers: cap decode width.
+                      cacheWidth: 260,
                       placeholder: Container(
                         color: Theme.of(context).colorScheme.surface,
                       ),
@@ -664,8 +749,9 @@ class _VnCard extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
+                  CopyableText(
+                    text: title,
+                    vnId: vn.id,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -819,7 +905,9 @@ class _UserMenuSection extends ConsumerWidget {
                 leading: const Icon(Icons.person),
                 title: Text('我的资料 (${user?.username ?? ""})'),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => user != null ? openUserProfile(context, user.id) : null,
+                onTap: () => user != null
+                    ? context.push('/user/${user.id}')
+                    : null,
               ),
               ListTile(
                 leading: const Icon(Icons.bookmark),

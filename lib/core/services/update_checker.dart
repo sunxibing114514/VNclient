@@ -90,8 +90,10 @@ class UpdateChecker {
         releaseNotes: body,
       );
     } on DioException catch (e) {
+      // GitHub answers 404 both when the repository has no releases yet
+      // and when it cannot be accessed — never claim more than that.
       final msg = e.response?.statusCode == 404
-          ? '尚未发布任何 Release'
+          ? '仓库尚未发布任何 Release 或暂时无法访问, 可稍后再试'
           : '网络错误: ${e.message ?? e.type.name}';
       return UpdateResult(
         hasUpdate: false,

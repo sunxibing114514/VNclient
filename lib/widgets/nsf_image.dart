@@ -13,6 +13,10 @@ import '../core/providers/theme_provider.dart';
 /// [sexual] / [violence] come from [ImageRef] (0-2 scale, null = unknown).
 /// When blur is active, a small tap hint is overlaid; tapping toggles the
 /// reveal for the current session of the widget.
+///
+/// [cacheWidth] decodes the image into the memory cache at the given pixel
+/// width — a cheap way to keep large grids (character/VN covers) from
+/// holding many full-resolution bitmaps in RAM.
 class NsfImage extends ConsumerStatefulWidget {
   const NsfImage({
     super.key,
@@ -25,6 +29,7 @@ class NsfImage extends ConsumerStatefulWidget {
     this.borderRadius,
     this.placeholder,
     this.errorWidget,
+    this.cacheWidth,
   });
 
   final String? imageUrl;
@@ -37,12 +42,17 @@ class NsfImage extends ConsumerStatefulWidget {
   final Widget? placeholder;
   final Widget? errorWidget;
 
+  /// Optional decode width (in logical pixels scaled by the device pixel
+  /// ratio) for the in-memory cache. Null = decode at full size.
+  final int? cacheWidth;
+
   @override
   ConsumerState<NsfImage> createState() => _NsfImageState();
 }
 
 class _NsfImageState extends ConsumerState<NsfImage> {
   bool _revealed = false;
+  int _retry = 0;
 
   bool get _isNsfw =>
       (widget.sexual != null && widget.sexual! > 0) ||
@@ -64,14 +74,24 @@ class _NsfImageState extends ConsumerState<NsfImage> {
     }
 
     Widget image = CachedNetworkImage(
+      key: ValueKey('nsf_${_retry}_$url'),
       imageUrl: url,
       fit: widget.fit,
       width: widget.width,
       height: widget.height,
+      memCacheWidth: widget.cacheWidth,
       placeholder: (_, __) =>
           widget.placeholder ?? const ColoredBox(color: Colors.black12, child: SizedBox.expand()),
-      errorWidget: (_, __, ___) =>
-          widget.errorWidget ?? const ColoredBox(color: Colors.black12, child: SizedBox.expand()),
+      errorWidget: (_, __, ___) => GestureDetector(
+        onTap: () => setState(() => _retry++),
+        child: widget.errorWidget ??
+            const ColoredBox(
+              color: Colors.black12,
+              child: Center(
+                child: Icon(Icons.refresh, size: 18, color: Colors.black38),
+              ),
+            ),
+      ),
     );
 
     if (_shouldBlur) {
@@ -131,6 +151,7 @@ NsfImage nsfImageFromRef(
   BorderRadius? borderRadius,
   Widget? placeholder,
   Widget? errorWidget,
+  int? cacheWidth,
 }) {
   return NsfImage(
     key: key,
@@ -143,5 +164,6 @@ NsfImage nsfImageFromRef(
     borderRadius: borderRadius,
     placeholder: placeholder,
     errorWidget: errorWidget,
+    cacheWidth: cacheWidth,
   );
 }

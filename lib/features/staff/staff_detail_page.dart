@@ -8,7 +8,9 @@ import '../../core/providers/endpoints_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/theme/title_resolver.dart';
 import '../../widgets/async_value_widget.dart';
+import '../../widgets/copyable_text.dart';
 import '../../widgets/section_header.dart';
+import '../releases/game_download_sheet.dart';
 
 final _staffProvider =
     FutureProvider.autoDispose.family<Staff, String>((ref, id) {
@@ -59,7 +61,8 @@ class _StaffBody extends ConsumerWidget {
       padding: const EdgeInsets.all(16),
       children: [
         // Name header
-        Text(primaryName, style: Theme.of(context).textTheme.headlineSmall),
+        CopyableText(
+            text: primaryName, style: Theme.of(context).textTheme.headlineSmall),
         if (secondaryName != null && secondaryName.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 2),
@@ -124,6 +127,8 @@ class _StaffBody extends ConsumerWidget {
               trailing: const Icon(Icons.open_in_new, size: 18),
               onTap: () => context.push(
                   '/webview?url=${Uri.encodeComponent(link.url)}&title=${Uri.encodeComponent(link.label)}'),
+              // 长按复制链接。
+              onLongPress: () => copyLinkToClipboard(context, link.url),
             ),
         ],
         const SizedBox(height: 24),

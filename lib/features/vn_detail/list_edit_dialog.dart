@@ -22,6 +22,14 @@ class _ListEditDialogState extends ConsumerState<ListEditDialog> {
   final _startedController = TextEditingController();
   final _finishedController = TextEditingController();
   final Set<int> _selectedLabels = {};
+
+  /// 服务器上的原始标签快照 (预填时抓取)。
+  ///
+  /// 用于在保存时计算增量: 新增的走 `labels_set`, 取消勾选的走
+  /// `labels_unset`。只发 `labels_set` 无法移除已有标签 — 服务器不会把
+  /// 缺失项理解为取消 (api-kana.md: labels_set 只增不减)。
+  Set<int> _originalLabels = {};
+
   bool _saving = false;
   bool _loaded = false; // 是否已从服务器预填
 
@@ -49,15 +57,29 @@ class _ListEditDialogState extends ConsumerState<ListEditDialog> {
       if (entry.notes != null) _notesController.text = entry.notes!;
       if (entry.started != null) _startedController.text = entry.started!;
       if (entry.finished != null) _finishedController.text = entry.finished!;
+      // 过滤虚拟标签: id 0 ("No label") 与 id 7 ("Voted") 不能通过
+      // labels_set/labels_unset 设置 — api-kana.md 明确说明这两个虚拟
+      // 标签无法手动设置, "Voted" 由 vote 字段自动增删。此前把 7 带进
+      // labels_set 会导致服务器返回 400, 表现为"再次保存无法成功"。
       _selectedLabels
         ..clear()
-        ..addAll(entry.labels.where((l) => l.id != 0).map((l) => l.id));
+        ..addAll(entry.labels
+            .where((l) =>
+                l.id != 0 && l.id != AppConstants.labelVoted)
+            .map((l) => l.id));
+      _originalLabels = {..._selectedLabels};
     });
   }
 
   Future<void> _save() async {
     setState(() => _saving = true);
     final endpoint = ref.read(listEndpointProvider);
+    // 基于原始快照计算标签增量: 勾选的新标签用 labels_set 添加,
+    // 取消勾选的旧标签用 labels_unset 移除。
+    final toAdd =
+        _selectedLabels.difference(_originalLabels).toList();
+    final toRemove =
+        _originalLabels.difference(_selectedLabels).toList();
     try {
       await endpoint.patchList(
         widget.vnId,
@@ -71,7 +93,8 @@ class _ListEditDialogState extends ConsumerState<ListEditDialog> {
         finished: _finishedController.text.trim().isEmpty
             ? null
             : _finishedController.text.trim(),
-        labelsSet: _selectedLabels.toList(),
+        labelsSet: toAdd.isEmpty ? null : toAdd,
+        labelsUnset: toRemove.isEmpty ? null : toRemove,
       );
       // 刷新当前 VN 的列表记录缓存。
       ref.invalidate(userVnListEntryProvider(widget.vnId));

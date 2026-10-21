@@ -1,7 +1,7 @@
 name: vndb_app
 description: A Flutter client for VNDB (Visual Novel Database) replicating the website functionality.
 publish_to: 'none'
-version: 1.3.6+12
+version: 1.4.0+14
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -30,6 +30,7 @@ dependencies:
   flutter_svg: ^2.0.9
   image_picker: ^1.0.7
   path_provider: ^2.1.1
+  flutter_markdown: ^0.7.0
 
 dev_dependencies:
   flutter_test:
@@ -43,7 +44,10 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/bg/
+    # 仅打包实际使用的默认背景。早期版本的 11 张旧背景 PNG (bgAIR 等,
+    # 共 ~3.65MB) 已在 UI 中不可达 (设置里只有 默认/Angel Stars/自定义),
+    # v1.3.7 起计划删除 — 不再打进 APK 以缩减体积, 文件仍保留在 git 历史。
+    - assets/images/bg/angel-bg-stars.jpg
     - assets/images/lang/
     - assets/images/plat/
     - assets/images/list/

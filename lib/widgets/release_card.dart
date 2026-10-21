@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/models/release.dart';
 import '../core/providers/theme_provider.dart';
 import '../core/theme/title_resolver.dart';
+import 'copyable_text.dart';
 import 'nsf_image.dart';
 
 /// A compact card for a release entry, with an optional cover image.
@@ -51,6 +52,9 @@ class ReleaseCard extends ConsumerWidget {
                   sexual: imageRef?.sexual,
                   violence: imageRef?.violence,
                   fit: BoxFit.cover,
+                  // Half-width card covers: cap the decode width so grids
+                  // of release cards don't hold full-res bitmaps in RAM.
+                  cacheWidth: 400,
                   placeholder: Container(
                     color:
                         Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -78,8 +82,8 @@ class ReleaseCard extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    title,
+                  CopyableText(
+                    text: title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(

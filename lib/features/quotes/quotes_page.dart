@@ -7,6 +7,7 @@ import '../../core/providers/endpoints_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/theme/title_resolver.dart';
 import '../../widgets/async_value_widget.dart';
+import '../../widgets/copyable_text.dart';
 
 /// Page that displays a random quote (like the VNDB footer) and lets the user
 /// fetch another.
@@ -59,8 +60,8 @@ class _QuoteCard extends ConsumerWidget {
         children: [
           const Icon(Icons.format_quote, size: 48),
           const SizedBox(height: 16),
-          Text(
-            '"${quote.quote}"',
+          CopyableText(
+            text: '"${quote.quote}"',
             style: Theme.of(context).textTheme.titleMedium,
             textAlign: TextAlign.center,
           ),
